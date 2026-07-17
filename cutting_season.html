@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>CUTTING SEASON</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; background: #000; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Courier New', monospace;
+    overflow: hidden;
+  }
+  #wrap {
+    display: flex; flex-direction: column; align-items: center;
+    image-rendering: pixelated;
+  }
+  #title {
+    color: #ff8f2e;
+    font-size: 28px;
+    letter-spacing: 6px;
+    text-shadow: 3px 3px 0 #5b1d00;
+    margin-bottom: 6px;
+    font-weight: bold;
+  }
+  #hud {
+    width: 768px;
+    display: flex; justify-content: space-between; align-items: center;
+    color: #d8e8ff;
+    font-size: 14px;
+    padding: 4px 6px;
+    background: #111;
+    border: 3px solid #444;
+    box-sizing: border-box;
+  }
+  canvas {
+    background: #0a0a0a;
+    border: 3px solid #444;
+    border-top: none;
+    display: block;
+  }
+  #overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.88);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: #eee; text-align: center; z-index: 10;
+  }
+  #overlay h1 { color: #ff8f2e; font-size: 40px; letter-spacing: 4px; text-shadow: 3px 3px 0 #5b1d00;}
+  #overlay ul { max-width: 560px; text-align: left; padding-left: 22px; margin: 0; }
+  #overlay li { font-size: 14px; color: #bcd; line-height: 1.5; margin-bottom: 10px; }
+  #overlay .movehint { margin-top: 14px; font-size: 13px; color: #8ba; }
+  #overlay button {
+    margin-top: 18px; padding: 12px 26px; font-size: 16px; font-family: inherit;
+    background: #ff8f2e; color: #200; border: none; cursor: pointer; letter-spacing: 2px;
+    font-weight: bold;
+  }
+  #overlay button:hover { background: #ffb066; }
+  .pip { display:inline-block; width:8px; height:8px; margin-left:2px; background:#333; border:1px solid #666;}
+  .pipFull { background:#5ec6ff; }
+  #swimBarOuter { width:120px; height:10px; background:#222; border:1px solid #555; }
+  #swimBarInner { height:100%; background:#5ec6ff; width:100%; }
+  kbd { background:#333; padding:1px 5px; border-radius:3px; border:1px solid #666;}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="title">CUTTING SEASON</div>
+  <div id="hud">
+    <div>STAGE <span id="stageNum">1</span></div>
+    <div id="houseDisplay"></div>
+    <div>BLOCKADES <span id="blockadeDisplay"></span></div>
+    <div>LIVES <span id="lives">3</span></div>
+    <div>SWIM <div id="swimBarOuter"><div id="swimBarInner"></div></div></div>
+  </div>
+  <canvas id="game" width="768" height="512"></canvas>
+</div>
+
+<div id="overlay">
+  <h1 id="overlayTitle">CUTTING SEASON</h1>
+  <ul>
+    <li><b>SCORE</b> the ice — walk your horse team over frozen floes to score them.</li>
+    <li><b>BREAK &amp; HAUL</b> — your crew pries scored floes into BLOCKS. Grab one, then rush it to an ICE HOUSE.</li>
+    <li><b>SWIM CAREFULLY</b> — dark water kills instantly. Lighter water is crossable but drains your SWIM meter; run dry and you freeze.</li>
+    <li><b>WATCH THE RIVAL</b> (blue) — they scavenge your blocks to build BARRICADES across the swim lanes. Lean into one to chip it down; breaking it frees the block inside.</li>
+    <li><b>5 STAGES</b> — more houses, more crew, more chaos each time.</li>
+  </ul>
+  <div class="movehint"><b>Move:</b> <kbd>Arrow Keys</kbd> / <kbd>WASD</kbd></div>
+  <button id="startBtn">START WORK</button>
+</div>
+
+<script>
+(function(){
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const TILE = 32;
+const COLS = 24, ROWS = 16;
+const RIVER_TOP = 3, RIVER_BOTTOM = 9;
+
+// ---------- Palette (Odyssey2-ish limited blocky palette) ----------
+const PAL = {
+  bg: '#0a0a0a',
+  bank: '#7a5230',
+  bankDark: '#5b3c22',
+  iceUncut: '#9fd6e8',
+  iceScored: '#c9edf7',
+  block: '#eaffff',
+  blockEdge: '#7ac8dd',
+  waterOpen: '#0b2a55',
+  waterOpenDark: '#081f40',
+  waterSwim: '#2c6fa8',
+  house: '#8a3b1f',
+  houseRoof: '#c95b2e',
+  houseDoor: '#3a1a0d',
+  player: '#ffdd55',
+  horse: '#c98b4a',
+  npc: '#e05555',
+  enemyHorse: '#5b6b78',
+  enemyBody: '#7fb2e0',
+  obstruct: '#8fa4ad',
+  obstructDark: '#5e7079',
+  obstructCrack: '#2a343a',
+  text: '#d8e8ff'
+};
+
+// ---------- Sound (synthesized, no external files — keeps it Odyssey2-authentic) ----------
+let actx = null;
+function initAudio(){
+  if (!actx){
+    try { actx = new (window.AudioContext || window.webkitAudioContext)(); }
+    catch(e){ actx = null; }
+  } else if (actx.state === 'suspended'){
+    actx.resume();
+  }
+}
+
+function beep(freq, dur, type, vol, delay, glideTo){
+  if (!actx) return;
+  const t0 = actx.currentTime + (delay||0);
+  const osc = actx.createOscillator();
+  const gain = actx.createGain();
+  osc.type = type || 'square';
+  osc.frequency.setValueAtTime(freq, t0);
+  if (glideTo) osc.frequency.linearRampToValueAtTime(glideTo, t0+dur);
+  gain.gain.setValueAtTime(0, t0);
+  gain.gain.linearRampToValueAtTime(vol||0.15, t0+0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
+  osc.connect(gain).connect(actx.destination);
+  osc.start(t0);
+  osc.stop(t0+dur+0.02);
+}
+
+function noiseBurst(dur, vol, delay){
+  if (!actx) return;
+  const t0 = actx.currentTime + (delay||0);
+  const bufferSize = actx.sampleRate * dur;
+  const buffer = actx.createBuffer(1, bufferSize, actx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i=0;i<bufferSize;i++) data[i] = (Math.random()*2-1) * (1 - i/bufferSize);
+  const src = actx.createBufferSource();
+  src.buffer = buffer;
+  const gain = actx.createGain();
+  gain.gain.setValueAtTime(vol||0.2, t0);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
+  const filter = actx.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.frequency.value = 1200;
+  src.connect(filter).connect(gain).connect(actx.destination);
+  src.start(t0);
+}
+
+const sfx = {
+  score(){ beep(660, 0.06, 'square', 0.08); },
+  crack(){ noiseBurst(0.15, 0.22, 0); beep(180, 0.1, 'square', 0.1, 0.02); },
+  pickup(){ beep(440, 0.07, 'square', 0.12); beep(660, 0.08, 'square', 0.1, 0.06); },
+  deliver(){
+    beep(523, 0.09, 'square', 0.14, 0);
+    beep(659, 0.09, 'square', 0.14, 0.08);
+    beep(784, 0.14, 'square', 0.14, 0.16);
+  },
+  freeze(){
+    beep(500, 0.3, 'sawtooth', 0.15, 0, 90);
+    noiseBurst(0.4, 0.15, 0.02);
+  },
+  stageClear(){
+    [523,659,784,1046].forEach((f,i)=> beep(f, 0.16, 'square', 0.15, i*0.13));
+  },
+  gameOver(){
+    [400,340,280,220].forEach((f,i)=> beep(f, 0.28, 'sawtooth', 0.15, i*0.22));
+  },
+  win(){
+    [523,659,784,1046,1318].forEach((f,i)=> beep(f, 0.2, 'square', 0.16, i*0.14));
+  },
+  chip(){ beep(700, 0.04, 'square', 0.1); },
+  build(){
+    noiseBurst(0.18, 0.18, 0);
+    beep(160, 0.16, 'square', 0.12, 0.03);
+    beep(120, 0.18, 'square', 0.1, 0.08);
+  },
+  breakObstruction(){
+    noiseBurst(0.2, 0.25, 0);
+    beep(500, 0.08, 'square', 0.13, 0.02);
+    beep(700, 0.1, 'square', 0.13, 0.08);
+  },
+  rivalPickup(){ beep(300, 0.07, 'sawtooth', 0.09); }
+};
+
+// ---------- Game state ----------
+let state = 'title'; // title, playing, stageclear, gameover, win
+let stage = 1;
+let lives = 3;
+let houses = [];       // {x,y,count,capacity}
+let grid = [];         // COLS x ROWS tile map
+let blocks = [];       // loose block items {x,y}
+let npcs = [];         // pry-bar workers
+let player = { x: 0, y: 0, carrying: false, swim: 1.0, frozen:false, freezeTimer:0, chipCooldown:0 };
+let enemy = { x:0, y:0, carrying:false, swim:1.0, frozen:false, freezeTimer:0, target:null };
+let obstructions = []; // {x,y,hp} — ice-block barricades the rival crew builds across swim lanes
+let keys = {};
+let deliveriesNeeded = 0;
+let deliveriesMade = 0;
+let flashTimer = 0;
+let flashMsg = '';
+
+// tile types: 'bank', 'uncut', 'scored', 'openwater', 'swimwater', 'houseTile'
+
+function idx(x,y){ return y*COLS+x; }
+function inBounds(x,y){ return x>=0 && x<COLS && y>=0 && y<ROWS; }
+
+function buildStage(n){
+  grid = new Array(COLS*ROWS).fill('bank');
+  houses = [];
+  blocks = [];
+  npcs = [];
+  deliveriesMade = 0;
+  deliveriesNeeded = n*5;
+
+  // Far bank rows 0-2, house row at row 1
+  const numHouses = n;
+  const spacing = Math.floor(COLS/(numHouses+1));
+  for (let i=0;i<numHouses;i++){
+    const hx = spacing*(i+1);
+    houses.push({x:hx, y:1, count:0, capacity:5});
+    grid[idx(hx,1)] = 'houseTile';
+  }
+  for (let x=0;x<COLS;x++){
+    grid[idx(x,0)]='bank';
+    if (grid[idx(x,1)]!=='houseTile') grid[idx(x,1)]='bank';
+    grid[idx(x,2)]='bank';
+  }
+
+  // River rows (7 rows deep), randomized swim lanes — narrower and fewer than before
+  const riverTop = RIVER_TOP, riverBottom = RIVER_BOTTOM;
+  let laneCount = 1 + Math.floor(Math.random()*2); // 1-2 lanes (was 2-3)
+  let laneCols = new Set();
+  for (let l=0; l<laneCount; l++){
+    let start = 1 + Math.floor(Math.random()*(COLS-3));
+    let width = 1 + Math.floor(Math.random()*2); // 1-2 tiles wide (was 2-3)
+    for (let c=start;c<start+width && c<COLS-1;c++) laneCols.add(c);
+  }
+  for (let y=riverTop;y<=riverBottom;y++){
+    for (let x=0;x<COLS;x++){
+      grid[idx(x,y)] = laneCols.has(x) ? 'swimwater' : 'openwater';
+    }
+  }
+
+  // Near bank rows 10-15, ice forming strip rows 10-13, solid bank 14-15
+  for (let y=10;y<=13;y++){
+    for (let x=0;x<COLS;x++){
+      grid[idx(x,y)] = Math.random() < 0.55 ? 'uncut' : 'bank';
+    }
+  }
+  for (let y=14;y<=15;y++){
+    for (let x=0;x<COLS;x++) grid[idx(x,y)]='bank';
+  }
+
+  // one pry-bar worker per stage reached — more hands, more chaos
+  for (let i=0;i<n;i++){
+    npcs.push({
+      x: 1+Math.random()*(COLS-2),
+      y: 10+Math.random()*3,
+      target:null,
+      dwell:0
+    });
+  }
+
+  player.x = COLS/2;
+  player.y = 14.5;
+  player.carrying = false;
+  player.swim = 1.0;
+  player.frozen = false;
+  player.freezeTimer = 0;
+  player.chipCooldown = 0;
+
+  obstructions = [];
+
+  enemy.x = COLS/2;
+  enemy.y = 2.5;
+  enemy.carrying = false;
+  enemy.swim = 1.0;
+  enemy.frozen = false;
+  enemy.freezeTimer = 0;
+  enemy.target = null;
+
+  showFlash('STAGE '+n, 90);
+}
+
+function showFlash(msg, t){ flashMsg = msg; flashTimer = t; }
+
+function tileAt(px,py){
+  const x = Math.floor(px), y = Math.floor(py);
+  if (!inBounds(x,y)) return 'bank';
+  return grid[idx(x,y)];
+}
+
+function setTile(px,py,val){
+  const x = Math.floor(px), y = Math.floor(py);
+  if (!inBounds(x,y)) return;
+  grid[idx(x,y)] = val;
+}
+
+// ---------- Input ----------
+window.addEventListener('keydown', e=>{
+  keys[e.key.toLowerCase()] = true;
+  if (['arrowup','arrowdown','arrowleft','arrowright',' '].includes(e.key.toLowerCase())) e.preventDefault();
+});
+window.addEventListener('keyup', e=>{ keys[e.key.toLowerCase()] = false; });
+
+document.getElementById('startBtn').addEventListener('click', ()=>{
+  initAudio();
+  document.getElementById('overlay').style.display = 'none';
+  stage = 1; lives = 3;
+  buildStage(stage);
+  state = 'playing';
+});
+
+// ---------- Update ----------
+function respawnPlayer(lostBlock){
+  player.x = COLS/2; player.y = 14.5;
+  player.swim = 1.0;
+  player.frozen = false;
+  player.freezeTimer = 0;
+  if (lostBlock) player.carrying = false;
+}
+
+function loseLife(msg){
+  sfx.freeze();
+  lives--;
+  showFlash(msg, 80);
+  if (lives <= 0){
+    state = 'gameover';
+    setTimeout(()=>sfx.gameOver(), 350);
+  } else {
+    respawnPlayer(true);
+  }
+}
+
+function updatePlayer(){
+  if (player.chipCooldown > 0) player.chipCooldown--;
+  if (player.frozen){
+    player.freezeTimer--;
+    if (player.freezeTimer<=0) respawnPlayer(true);
+    return;
+  }
+  let dx=0, dy=0;
+  const baseSpeed = 0.10;
+  const inWaterNow = tileAt(player.x, player.y) === 'swimwater';
+  const speed = inWaterNow ? baseSpeed * 0.4 : baseSpeed;
+  if (keys['arrowup']||keys['w']) dy -= speed;
+  if (keys['arrowdown']||keys['s']) dy += speed;
+  if (keys['arrowleft']||keys['a']) dx -= speed;
+  if (keys['arrowright']||keys['d']) dx += speed;
+
+  let nx = player.x + dx;
+  let ny = player.y + dy;
+  nx = Math.max(0.2, Math.min(COLS-0.2, nx));
+  ny = Math.max(0.2, Math.min(ROWS-0.2, ny));
+
+  const t = tileAt(nx,ny);
+
+  if (t === 'obstruct'){
+    // blocked by a rival-built ice barricade — lean into it to chip it apart instead of moving
+    if (player.chipCooldown <= 0){
+      const ox = Math.floor(nx), oy = Math.floor(ny);
+      const obs = obstructions.find(o=>o.x===ox && o.y===oy);
+      if (obs){
+        obs.hp--;
+        sfx.chip();
+        player.chipCooldown = 14;
+        if (obs.hp <= 0){
+          obstructions = obstructions.filter(o=>o!==obs);
+          setTile(ox,oy,'swimwater');
+          blocks.push({x:ox,y:oy});
+          sfx.breakObstruction();
+          showFlash('BLOCKADE CLEARED!', 40);
+        }
+      }
+    }
+    return;
+  }
+
+  if (t === 'openwater'){
+    player.x = nx; player.y = ny;
+    loseLife('FROZEN SOLID! -1 LIFE');
+    return;
+  }
+
+  player.x = nx; player.y = ny;
+
+  if (t === 'uncut'){
+    // plow scores the ice as horses cross
+    setTile(nx,ny,'scored');
+    sfx.score();
+  }
+
+  if (t === 'swimwater'){
+    player.swim -= 0.0035;
+    if (player.swim <= 0){
+      player.swim = 0;
+      loseLife('THE TEAM FROZE IN THE CURRENT! -1 LIFE');
+      return;
+    }
+  } else {
+    player.swim = Math.min(1, player.swim + 0.015);
+  }
+
+  // pick up block
+  if (!player.carrying){
+    for (let i=blocks.length-1;i>=0;i--){
+      const b = blocks[i];
+      const d = Math.hypot(b.x+0.5-player.x, b.y+0.5-player.y);
+      if (d < 0.55){
+        blocks.splice(i,1);
+        player.carrying = true;
+        sfx.pickup();
+        showFlash('BLOCK LOADED', 40);
+        break;
+      }
+    }
+  }
+
+  // deliver to house
+  if (player.carrying){
+    for (const h of houses){
+      const d = Math.hypot(h.x+0.5-player.x, h.y+0.5-player.y);
+      if (d < 0.7 && h.count < h.capacity){
+        h.count++;
+        player.carrying = false;
+        deliveriesMade++;
+        sfx.deliver();
+        showFlash('DELIVERED! ('+deliveriesMade+'/'+deliveriesNeeded+')', 40);
+        if (deliveriesMade >= deliveriesNeeded){
+          state = 'stageclear';
+          flashTimer = 120;
+          setTimeout(()=>sfx.stageClear(), 100);
+        }
+        break;
+      }
+    }
+  }
+}
+
+// finds the x-coordinate of the nearest swimmable column at a given row, used by the rival crew to avoid open water
+function nearestSwimCol(row, fromX){
+  row = Math.max(0, Math.min(ROWS-1, Math.round(row)));
+  let best = null, bestDist = Infinity;
+  for (let x=0;x<COLS;x++){
+    if (grid[idx(x,row)] === 'swimwater'){
+      const d = Math.abs(x-fromX);
+      if (d < bestDist){ bestDist = d; best = x; }
+    }
+  }
+  return best;
+}
+
+function respawnEnemy(lostBlock){
+  enemy.x = COLS/2;
+  enemy.y = 2.5;
+  enemy.swim = 1.0;
+  enemy.frozen = false;
+  enemy.freezeTimer = 0;
+  enemy.target = null;
+  if (lostBlock) enemy.carrying = false;
+}
+
+function updateEnemy(){
+  if (enemy.frozen){
+    enemy.freezeTimer--;
+    if (enemy.freezeTimer <= 0) respawnEnemy(true);
+    return;
+  }
+
+  // clear a reached target immediately rather than waiting on a random re-roll —
+  // this was leaving the rival idling in place far too often
+  if (enemy.target){
+    const dd = Math.hypot((enemy.target.x+0.5)-enemy.x, (enemy.target.y+0.5)-enemy.y);
+    if (dd < 0.12) enemy.target = null;
+  }
+
+  const maxObstructions = Math.min(2 + Math.floor(stage/2), 5);
+
+  // decide what to go after
+  if (!enemy.carrying){
+    if (blocks.length > 0 && (!enemy.target || Math.random() < 0.05)){
+      let best=null, bd=Infinity;
+      for (const b of blocks){
+        const d = Math.hypot(b.x+0.5-enemy.x, b.y+0.5-enemy.y);
+        if (d < bd){ bd = d; best = b; }
+      }
+      enemy.target = { x: best.x, y: best.y };
+    } else if (!enemy.target){
+      enemy.target = { x: 1+Math.random()*(COLS-2), y: 10+Math.random()*3 };
+    }
+  } else if (!enemy.target){
+    // find an unobstructed swim-lane tile to barricade — pick RANDOMLY among all
+    // valid cells across the full depth of the river, not just the nearest one,
+    // so barricades land mid-channel instead of always clustering at the river's edge
+    let candidates = [];
+    for (let y=RIVER_TOP;y<=RIVER_BOTTOM;y++){
+      for (let x=0;x<COLS;x++){
+        if (grid[idx(x,y)] === 'swimwater' && !obstructions.find(o=>o.x===x && o.y===y)){
+          candidates.push({x,y});
+        }
+      }
+    }
+    if (candidates.length > 0 && obstructions.length < maxObstructions){
+      enemy.target = candidates[Math.floor(Math.random()*candidates.length)];
+    }
+    // else: no room to build or nowhere left to block — hold position with the block until space frees up
+  }
+
+  const baseSpeed = 0.12;
+  const curTile = tileAt(enemy.x, enemy.y);
+  const speed = curTile === 'swimwater' ? baseSpeed*0.7 : baseSpeed;
+
+  const tx = (enemy.target ? enemy.target.x : enemy.x) + 0.5;
+  const ty = (enemy.target ? enemy.target.y : enemy.y) + 0.5;
+  const ddx = tx-enemy.x, ddy = ty-enemy.y;
+  const dist = Math.hypot(ddx,ddy);
+
+  let nx = enemy.x, ny = enemy.y;
+  if (dist > 0.06){
+    nx = enemy.x + (ddx/dist)*speed;
+    ny = enemy.y + (ddy/dist)*speed;
+  }
+  nx = Math.max(0.2, Math.min(COLS-0.2, nx));
+  ny = Math.max(0.2, Math.min(ROWS-0.2, ny));
+
+  let t = tileAt(nx,ny);
+  if (t === 'openwater' || t === 'obstruct'){
+    // If our target is itself inside the river (i.e. we're heading to build at a
+    // specific lane cell), steer toward THAT lane's column — it's guaranteed
+    // passable since it was only ever chosen from a swimwater tile. Using
+    // "nearest lane to current position" here was the bug: with more than one
+    // lane, it kept yanking the crew back into whichever lane was closest to
+    // its current spot instead of the one its target actually needed.
+    let laneX;
+    if (enemy.target && enemy.target.y >= RIVER_TOP && enemy.target.y <= RIVER_BOTTOM){
+      laneX = enemy.target.x;
+    } else {
+      laneX = nearestSwimCol(ny, enemy.x);
+    }
+    if (laneX !== null && laneX !== undefined){
+      const laneCenter = laneX + 0.5;
+      const diff = laneCenter - enemy.x;
+      const stepX = Math.sign(diff) * Math.min(Math.abs(diff), speed);
+      nx = enemy.x + stepX;
+      ny = enemy.y;
+      t = tileAt(nx,ny);
+      if (t === 'openwater' || t === 'obstruct'){ nx = enemy.x; ny = enemy.y; t = curTile; }
+    } else {
+      nx = enemy.x; ny = enemy.y; t = curTile;
+    }
+  }
+
+  enemy.x = nx; enemy.y = ny;
+
+  if (t === 'swimwater'){
+    enemy.swim -= 0.0035;
+    if (enemy.swim <= 0){
+      enemy.swim = 0;
+      enemy.frozen = true;
+      enemy.freezeTimer = 70;
+      const hadBlock = enemy.carrying;
+      enemy.carrying = false;
+      showFlash(hadBlock ? 'RIVAL CREW LOST THEIR LOAD IN THE CURRENT!' : 'RIVAL CREW FROZE IN THE CURRENT!', 60);
+      return;
+    }
+  } else {
+    enemy.swim = Math.min(1, enemy.swim + 0.015);
+  }
+
+  if (!enemy.carrying){
+    for (let i=blocks.length-1;i>=0;i--){
+      const b = blocks[i];
+      const d = Math.hypot(b.x+0.5-enemy.x, b.y+0.5-enemy.y);
+      if (d < 0.55){
+        blocks.splice(i,1);
+        enemy.carrying = true;
+        enemy.target = null;
+        sfx.rivalPickup();
+        break;
+      }
+    }
+  } else if (enemy.target){
+    const d = Math.hypot(enemy.target.x+0.5-enemy.x, enemy.target.y+0.5-enemy.y);
+    if (d < 0.5 && grid[idx(enemy.target.x,enemy.target.y)] === 'swimwater'){
+      const hp = 2 + Math.min(Math.floor(stage/2), 2);
+      obstructions.push({x:enemy.target.x, y:enemy.target.y, hp, maxHp:hp});
+      setTile(enemy.target.x, enemy.target.y, 'obstruct');
+      enemy.carrying = false;
+      enemy.target = null;
+      sfx.build();
+      showFlash('RIVAL CREW BLOCKED A CHANNEL!', 50);
+    }
+  }
+}
+
+function updateNpcs(){
+  for (const n of npcs){
+    if (n.target === null || Math.random()<0.002){
+      // find a scored tile to target
+      let candidates = [];
+      for (let y=10;y<=13;y++){
+        for (let x=0;x<COLS;x++){
+          if (grid[idx(x,y)]==='scored') candidates.push({x,y});
+        }
+      }
+      if (candidates.length>0){
+        n.target = candidates[Math.floor(Math.random()*candidates.length)];
+      } else {
+        n.target = { x: 1+Math.random()*(COLS-2), y: 10+Math.random()*3 };
+      }
+    }
+    const tx = n.target.x+0.5, ty = n.target.y+0.5;
+    const ddx = tx-n.x, ddy = ty-n.y;
+    const dist = Math.hypot(ddx,ddy);
+    if (dist > 0.1){
+      n.x += (ddx/dist)*0.045;
+      n.y += (ddy/dist)*0.045;
+    } else {
+      const t = tileAt(n.x,n.y);
+      if (t === 'scored'){
+        n.dwell++;
+        if (n.dwell > 45){
+          setTile(n.x,n.y,'bank');
+          blocks.push({x:Math.floor(n.x), y:Math.floor(n.y)});
+          sfx.crack();
+          n.dwell = 0;
+          n.target = null;
+        }
+      } else {
+        n.target = null;
+      }
+    }
+  }
+
+  // slow regeneration of uncut ice from bank tiles in the strip
+  if (Math.random() < 0.01){
+    const x = Math.floor(Math.random()*COLS);
+    const y = 10+Math.floor(Math.random()*4);
+    if (grid[idx(x,y)] === 'bank') grid[idx(x,y)] = 'uncut';
+  }
+}
+
+// ---------- Draw ----------
+function drawTile(x,y,type){
+  const px = x*TILE, py = y*TILE;
+  switch(type){
+    case 'bank':
+      ctx.fillStyle = ((x+y)%2===0)? PAL.bank : PAL.bankDark;
+      ctx.fillRect(px,py,TILE,TILE);
+      break;
+    case 'uncut':
+      ctx.fillStyle = PAL.iceUncut;
+      ctx.fillRect(px,py,TILE,TILE);
+      ctx.strokeStyle = '#6fa9c0';
+      ctx.strokeRect(px+2,py+2,TILE-4,TILE-4);
+      break;
+    case 'scored':
+      ctx.fillStyle = PAL.iceScored;
+      ctx.fillRect(px,py,TILE,TILE);
+      ctx.strokeStyle = '#3f8fae';
+      ctx.beginPath();
+      ctx.moveTo(px+4,py+4); ctx.lineTo(px+TILE-4,py+TILE-4);
+      ctx.moveTo(px+TILE-4,py+4); ctx.lineTo(px+4,py+TILE-4);
+      ctx.stroke();
+      break;
+    case 'openwater':
+      ctx.fillStyle = ((x+y)%2===0)? PAL.waterOpen : PAL.waterOpenDark;
+      ctx.fillRect(px,py,TILE,TILE);
+      break;
+    case 'swimwater':
+      ctx.fillStyle = PAL.waterSwim;
+      ctx.fillRect(px,py,TILE,TILE);
+      ctx.strokeStyle = '#5ec6ff';
+      ctx.beginPath();
+      ctx.moveTo(px+4,py+TILE/2); ctx.lineTo(px+TILE-4,py+TILE/2);
+      ctx.stroke();
+      break;
+    case 'houseTile':
+      ctx.fillStyle = PAL.bank;
+      ctx.fillRect(px,py,TILE,TILE);
+      break;
+    case 'obstruct':
+      ctx.fillStyle = PAL.waterSwim;
+      ctx.fillRect(px,py,TILE,TILE);
+      break;
+  }
+}
+
+function drawHouse(h){
+  const px = h.x*TILE, py = h.y*TILE;
+  ctx.fillStyle = PAL.house;
+  ctx.fillRect(px-4, py, TILE+8, TILE);
+  ctx.fillStyle = PAL.houseRoof;
+  ctx.beginPath();
+  ctx.moveTo(px-8,py);
+  ctx.lineTo(px+TILE/2,py-16);
+  ctx.lineTo(px+TILE+8,py);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = PAL.houseDoor;
+  ctx.fillRect(px+TILE/2-5, py+TILE-14, 10, 14);
+  // pips showing fill
+  for (let i=0;i<h.capacity;i++){
+    ctx.fillStyle = i<h.count ? '#5ec6ff' : '#333';
+    ctx.fillRect(px-2+i*7, py-24, 5,5);
+  }
+}
+
+function drawBlock(b){
+  const px = b.x*TILE+6, py = b.y*TILE+6;
+  ctx.fillStyle = PAL.block;
+  ctx.fillRect(px,py,TILE-12,TILE-12);
+  ctx.strokeStyle = PAL.blockEdge;
+  ctx.strokeRect(px,py,TILE-12,TILE-12);
+}
+
+function drawNpc(n){
+  const px = n.x*TILE, py = n.y*TILE;
+  ctx.fillStyle = PAL.npc;
+  ctx.fillRect(px-6, py-6, 12, 16);
+  ctx.strokeStyle = '#fff';
+  ctx.beginPath();
+  ctx.moveTo(px, py-6);
+  ctx.lineTo(px, py-18);
+  ctx.stroke();
+}
+
+function drawObstruction(o){
+  const px = o.x*TILE, py = o.y*TILE;
+  ctx.fillStyle = PAL.obstructDark;
+  ctx.fillRect(px+2, py+2, TILE-4, TILE-4);
+  ctx.fillStyle = PAL.obstruct;
+  ctx.fillRect(px+4, py+4, TILE-8, TILE-8);
+  ctx.strokeStyle = PAL.obstructCrack;
+  ctx.lineWidth = 2;
+  // more cracks show as it takes damage
+  const maxHp = o.maxHp || 4;
+  const damage = maxHp - o.hp;
+  ctx.beginPath();
+  if (damage >= 1){ ctx.moveTo(px+8,py+6); ctx.lineTo(px+TILE/2,py+TILE/2); }
+  if (damage >= 2){ ctx.moveTo(px+TILE-8,py+8); ctx.lineTo(px+TILE/2,py+TILE/2); }
+  if (damage >= 3){ ctx.moveTo(px+TILE/2,py+TILE-6); ctx.lineTo(px+TILE/2,py+TILE/2); }
+  ctx.stroke();
+  ctx.lineWidth = 1;
+  // HP pips above it so hits-remaining is obvious at a glance
+  for (let i=0;i<maxHp;i++){
+    ctx.fillStyle = i<o.hp ? '#ffdd55' : '#333';
+    ctx.fillRect(px+TILE/2-maxHp*4+i*8, py-10, 6,6);
+  }
+}
+
+function drawEnemy(){
+  const px = enemy.x*TILE, py = enemy.y*TILE;
+  if (enemy.frozen){
+    ctx.fillStyle = '#dfeaff';
+    ctx.fillRect(px-10,py-10,20,20);
+    return;
+  }
+  ctx.fillStyle = PAL.enemyHorse;
+  ctx.fillRect(px-16,py-4,10,10);
+  ctx.fillRect(px-4,py-4,10,10);
+  ctx.fillStyle = PAL.enemyBody;
+  ctx.fillRect(px+4,py-8,12,16);
+  if (enemy.carrying){
+    drawBlock({x: enemy.x - 0.15, y: enemy.y - 0.9});
+  }
+}
+
+function drawPlayer(){
+  const px = player.x*TILE, py = player.y*TILE;
+  if (player.frozen){
+    ctx.fillStyle = '#bfe9ff';
+    ctx.fillRect(px-10,py-10,20,20);
+    return;
+  }
+  // horses (two small rects behind)
+  ctx.fillStyle = PAL.horse;
+  ctx.fillRect(px-16,py-4,10,10);
+  ctx.fillRect(px-4,py-4,10,10);
+  // player body
+  ctx.fillStyle = PAL.player;
+  ctx.fillRect(px+4,py-8,12,16);
+  if (player.carrying){
+    drawBlock({x: player.x - 0.15, y: player.y - 0.9});
+  }
+}
+
+function render(){
+  ctx.fillStyle = PAL.bg;
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  for (let y=0;y<ROWS;y++){
+    for (let x=0;x<COLS;x++){
+      drawTile(x,y,grid[idx(x,y)]);
+    }
+  }
+  for (const h of houses) drawHouse(h);
+  for (const o of obstructions) drawObstruction(o);
+  for (const b of blocks) drawBlock(b);
+  for (const n of npcs) drawNpc(n);
+  drawEnemy();
+  drawPlayer();
+
+  if (flashTimer > 0){
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.font = 'bold 20px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffdd55';
+    ctx.fillText(flashMsg, canvas.width/2, 40);
+    flashTimer--;
+  }
+
+  if (state === 'stageclear'){
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle = '#ff8f2e';
+    ctx.font = 'bold 32px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText('STAGE '+stage+' CLEARED', canvas.width/2, canvas.height/2);
+  }
+  if (state === 'gameover'){
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle = '#ff5555';
+    ctx.font = 'bold 32px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText('FROZEN OUT — GAME OVER', canvas.width/2, canvas.height/2 - 10);
+    ctx.font = '16px Courier New';
+    ctx.fillStyle = '#ddd';
+    ctx.fillText('Press ENTER to try again', canvas.width/2, canvas.height/2+24);
+  }
+  if (state === 'win'){
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle = '#5ec6ff';
+    ctx.font = 'bold 30px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText('WINTER SURVIVED', canvas.width/2, canvas.height/2 - 10);
+    ctx.font = '16px Courier New';
+    ctx.fillStyle = '#ddd';
+    ctx.fillText('All five stages complete. Press ENTER to work again.', canvas.width/2, canvas.height/2+24);
+  }
+}
+
+function updateHud(){
+  document.getElementById('stageNum').textContent = stage;
+  document.getElementById('lives').textContent = lives;
+  document.getElementById('swimBarInner').style.width = Math.max(0,player.swim*100)+'%';
+  const hd = document.getElementById('houseDisplay');
+  hd.innerHTML = houses.map(h=>{
+    let pips = '';
+    for (let i=0;i<h.capacity;i++){
+      pips += '<span class="pip'+(i<h.count?' pipFull':'')+'"></span>';
+    }
+    return '<span style="margin-right:10px">'+pips+'</span>';
+  }).join('');
+  const maxObstructions = Math.min(2 + Math.floor(stage/2), 5);
+  document.getElementById('blockadeDisplay').textContent = obstructions.length+'/'+maxObstructions;
+}
+
+function loop(){
+  if (state === 'playing'){
+    updatePlayer();
+    updateNpcs();
+    updateEnemy();
+  }
+  if (state === 'gameover' || state === 'win'){
+    if (keys['enter']){
+      stage = 1; lives = 3; state='playing';
+      buildStage(stage);
+    }
+  }
+  if (state === 'stageclear'){
+    if (flashTimer <= 0){
+      stage++;
+      if (stage > 5){
+        state = 'win';
+        sfx.win();
+      } else {
+        buildStage(stage);
+        state = 'playing';
+      }
+    }
+  }
+  render();
+  updateHud();
+  requestAnimationFrame(loop);
+}
+loop();
+})();
+</script>
+</body>
+</html>
