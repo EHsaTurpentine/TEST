@@ -110,6 +110,48 @@ Verified with Playwright: each wave (1-5, and 6 wrapping to 1's image)
 shows a distinct real background on its intro card, and the live PLAY
 screen's scene art is byte-for-byte the same as before this change.
 
+## Player figure and tower (real reference art)
+
+The user supplied original concept art (predating this whole build) showing
+the intended player design: a spearfisher on a wooden fishing tower with
+diamond-net siding, throwing a trident. `claimjumper/assets/player_tower.png`
+and `player_character.png` are cut from it (background removed via a local
+flood-fill script, since this session's sandbox can't reach Adobe's
+background-removal API — no story here beyond "no network path", the cutout
+quality is the same either way) and wired into `drawPlatform()`/`drawFigure()`
+ahead of the existing sprite/vector fallbacks, same "degrade gracefully if
+an asset never loads" pattern as everywhere else in this file.
+
+**Tower**: a straight asset swap. `drawPlatform()` stretches it vertically
+only, anchored at the player's foot point, so its base reaches the water
+regardless of the current wave's platform height — mirrors the old
+tiled-trestle approach's goal (fit any wave height) with one image instead
+of a repeated bay unit.
+
+**Character**: not a straight swap, because the existing system needs to
+show continuous aim angle (mouse-driven, core to the gameplay) and the new
+reference is a single static throwing pose at one angle — the old system
+handled this with discrete pre-rendered angle-bucket sprites, which this
+new art doesn't have equivalents of. Tried rotating the whole cutout
+rigidly around the planted foot point to track aim angle; at even a
+modest ~37° delta from the art's own baked-in angle it read as the
+character collapsing forward, not aiming (confirmed empirically via
+screenshots, not just reasoned about — also ruled out canvas image-smoothing
+blur as the cause before concluding it was the rotation itself). Landed on
+a **dampened rotation** (`0.2×` the real angle delta) — enough for a subtle
+lean toward the throw, verified clean at both ends of the actual 8-88°
+aim range and at the default angle, without the collapsing-forward look.
+The aim reticle already shown on screen carries the precise aim feedback;
+this is a cosmetic assist, not the primary indicator.
+
+The weapon is baked into the character art (same as the old sprite path),
+so the separate procedural spear draw in `drawPlay()` is suppressed
+whenever either sprite path is active — extended, not just reused, since
+the old suppression check only looked at `SPR.figImg` and would have
+double-drawn a spear in the (unlikely) case that loads but this new art
+doesn't. Verified idle/moving/charging/flight/recovering states all render
+with exactly one weapon visible, no console errors.
+
 ## Remaining assets
 
 `claimjumper-images/qr.png` (the end-panel QR code) is in place — decodes

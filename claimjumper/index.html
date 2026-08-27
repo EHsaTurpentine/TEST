@@ -123,6 +123,17 @@ function waveBackdrop(){
   return WAVE_BGS[(G.wave - 1) % WAVE_BG_FILES.length];
 }
 
+// New reference art for the player figure and the tower/platform he stands
+// on (a real fishing-tower design, not the earlier trestle-scaffold crop).
+// Loaded independently, same graceful-fallback spirit as SKINS/WAVE_BGS: if
+// either fails to load, drawFigure/drawPlatform fall back to their existing
+// rendering rather than breaking.
+const PLAYER_ART = { tower: null, character: null };
+(function loadPlayerArt(){
+  const t = new Image(); t.onload = () => { PLAYER_ART.tower = t; }; t.src = 'assets/player_tower.png';
+  const c = new Image(); c.onload = () => { PLAYER_ART.character = c; }; c.src = 'assets/player_character.png';
+})();
+
 (function loadSprites(){
   let n=0, done=0;
   function chk(){ done++; if (done>=n) SPR.ready = true; }
@@ -1257,6 +1268,22 @@ function drawMinerPier(){
   }
 }
 function drawPlatform(oy){
+  // Real fishing-tower reference art (the design predates this build and
+  // should have been the basis from the start), stretched vertically only
+  // so its foot-anchor point lands at `oy` and its base reaches down near
+  // the water regardless of the current wave's platform height -- same
+  // "stack/stretch to fit" idea as the old trestle tiling below, just with
+  // one full image instead of a repeated bay unit.
+  if (PLAYER_ART.tower){
+    const img = PLAYER_ART.tower;
+    const anchorX = 289, anchorY = 280; // player's foot point within the art
+    const targetBottom = 226; // where the submerged base/splash should land
+    const scale = (targetBottom - oy) / (img.height - anchorY);
+    const dw = img.width * scale, dh = img.height * scale;
+    const cx = 65;
+    ctx.drawImage(img, cx - anchorX * scale, oy - anchorY * scale, dw, dh);
+    return;
+  }
   // v3.0.5: fixed two problems flagged in review. (1) Scale was arbitrary
   // (58px wide, whatever height fit) rather than derived from the actual
   // source footage -- the figure measures 385px tall in that footage and
@@ -1340,6 +1367,26 @@ function drawFigure(ox, oy, braced, moving, aimAngle, spState, chargeK){
   // computed foot anchor). Rather than attempt a third extraction, COCKED
   // now falls through to the same aim-bucket sprite every other state
   // (IDLE/MOVING/FLIGHT/RECOVERING) already uses without issue.
+  // Real player-figure reference art (the design this build should have
+  // started from), rotated around the planted foot point so aim angle
+  // still reads visually -- a whole-body lean toward the throw, rather
+  // than the old discrete pre-rendered angle buckets below. Checked first;
+  // falls through to the bucket sprite, then the vector body, if it never
+  // loads.
+  if (PLAYER_ART.character && spriteEligible){
+    const img = PLAYER_ART.character;
+    const footX = 85, footY = 278; // planted-foot point within the art
+    const scale = 34 / 283; // matches the old sprite's ~34px-tall convention
+    const refAngle = 11; // the art's own baked-in throw angle
+    const rot = ((aimAngle !== undefined ? aimAngle : 48) - refAngle) * D2R * 0.2;
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.translate(ox, oy);
+    ctx.rotate(rot);
+    ctx.drawImage(img, -footX * scale, -footY * scale, img.width * scale, img.height * scale);
+    ctx.restore();
+    return;
+  }
   if (SPR.ready && SPR.figImg && spriteEligible){
     const b = nearestFigBucket(aimAngle);
     const scale = 0.46; // old vector figure was ~19px tall; this gives ~34px -- a deliberate but modest bump
@@ -1975,7 +2022,7 @@ function drawPlay(){
     // v3.0.2: checks cockedImg now, matching drawFigure's actual COCKED sprite
     // v3.0.6: checks figImg now -- the dedicated cockedImg sprite is gone,
     // COCKED uses the same aim-bucket sprite as every other state.
-    const usedSpriteCocked = SPR.ready && SPR.figImg && !braced;
+    const usedSpriteCocked = !braced && (PLAYER_ART.character || (SPR.ready && SPR.figImg));
     if (!usedSpriteCocked){
       const back = clamp(sp.charge,0,1);
       drawSpear(ox+2, oy-9, ox-8-back*8, oy-17-back*6, 5, buffA, buffB);
@@ -1984,7 +2031,7 @@ function drawPlay(){
     // v3.0: the sprite figure (drawFigure's IDLE branch, same gating condition)
     // already bakes a spear into the pose art, so skip the procedural one here
     // to avoid drawing two overlapping spears. See drawFigure() for the match.
-    const usedSprite = SPR.ready && SPR.figImg && !braced && sp.state==='IDLE';
+    const usedSprite = !braced && sp.state==='IDLE' && (PLAYER_ART.character || (SPR.ready && SPR.figImg));
     if (!usedSprite){
       const a = sp.angle*D2R;
       drawSpear(ox+2, oy-8, ox+2+Math.cos(a)*22, oy-8+Math.sin(a)*22, 5, buffA, buffB);
