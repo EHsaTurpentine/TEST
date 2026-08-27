@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>CLAIMJUMPER</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; background: #000; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Courier New', monospace;
+    overflow: hidden;
+  }
+  #wrap { display: flex; flex-direction: column; align-items: center; }
+  #title {
+    color: #ffce4a; font-size: 28px; letter-spacing: 6px;
+    text-shadow: 3px 3px 0 #5b3a00; margin-bottom: 6px; font-weight: bold;
+  }
+  #hud {
+    width: 768px; display: flex; justify-content: space-between; align-items: center;
+    color: #d8e8ff; font-size: 14px; padding: 4px 6px;
+    background: #111; border: 3px solid #444; box-sizing: border-box;
+  }
+  canvas { background: #0a0a0a; border: 3px solid #444; border-top: none; display: block; }
+  #overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.88);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: #eee; text-align: center; z-index: 10;
+  }
+  #overlay h1 { color: #ffce4a; font-size: 40px; letter-spacing: 4px; text-shadow: 3px 3px 0 #5b3a00; }
+  #overlay ul { max-width: 560px; text-align: left; padding-left: 22px; margin: 0; }
+  #overlay li { font-size: 14px; color: #bcd; line-height: 1.5; margin-bottom: 10px; }
+  #overlay .movehint { margin-top: 14px; font-size: 13px; color: #8ba; }
+  #overlay button {
+    margin-top: 18px; padding: 12px 26px; font-size: 16px; font-family: inherit;
+    background: #ffce4a; color: #200; border: none; cursor: pointer; letter-spacing: 2px;
+    font-weight: bold;
+  }
+  #overlay button:hover { background: #ffde85; }
+  kbd { background: #333; padding: 1px 5px; border-radius: 3px; border: 1px solid #666; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="title">CLAIMJUMPER</div>
+  <div id="hud">
+    <div>STAGE <span id="stageNum">1</span>/5</div>
+    <div id="stageName"></div>
+    <div>WAVE <span id="waveNum">1</span></div>
+    <div>LIVES <span id="lives">3</span></div>
+  </div>
+  <canvas id="game" width="768" height="576"></canvas>
+</div>
+
+<div id="overlay">
+  <h1 id="overlayTitle">CLAIMJUMPER</h1>
+  <ul>
+    <li><b>CLIMB</b> the claim — work your way up ladders and platforms to the stake at the top.</li>
+    <li><b>DODGE</b> the defenders — Rock-Throwers and Archers lob and loose at you; Prospectors chuck gems just as hard. Getting hit costs a life.</li>
+    <li><b>WATCH FOR VINEGAR</b> — the Miner/Soldier's thrown bottle leaves a puddle that hurts just as much as a direct hit.</li>
+    <li><b>5 CLAIMS</b> — Mountain Vista, Rocky Cliff, Esmeralda, Pine Grove, Junction Bar. Tougher defenders join in as you go.</li>
+  </ul>
+  <div class="movehint"><b>Move:</b> <kbd>Arrow Keys</kbd> / <kbd>WASD</kbd> &nbsp; <b>Climb:</b> <kbd>Up</kbd>/<kbd>Down</kbd> on a ladder</div>
+  <button id="startBtn">STAKE YOUR CLAIM</button>
+</div>
+
+<script type="module">
+import { GameLoop, Input, StateMachine, TileMap, moveAndCollide, intersects } from '../engine/index.js';
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const TILE = 32;
+const COLS = 24, ROWS = 18;
+const SOLID = 1;
+
+const ROW_GOAL = 2, ROW_B = 5, ROW_C = 8, ROW_D = 11, ROW_E = 14, ROW_GROUND = 17;
+const PLATFORM_ROWS = [ROW_GOAL, ROW_B, ROW_C, ROW_D, ROW_E, ROW_GROUND];
+
+// Ladders zigzag between adjacent platforms, alternating sides, DK-style.
+const LADDERS = [
+  { col: 4, top: ROW_E, bottom: ROW_GROUND },
+  { col: 19, top: ROW_D, bottom: ROW_E },
+  { col: 4, top: ROW_C, bottom: ROW_D },
+  { col: 19, top: ROW_B, bottom: ROW_C },
+  { col: 12, top: ROW_GOAL, bottom: ROW_B },
+];
+
+const GOAL_ZONE = { x: 10 * TILE, y: ROW_GOAL * TILE - TILE, w: 4 * TILE, h: TILE };
+
+// Two underlying spawn behaviors (v7 §1.1); Rock-Thrower/Archer/Prospector
+// share the rock-spawn behavior, Miner/Soldier is the sole vinegar-spawn skin.
+const POSTS = [
+  { col: 18, row: ROW_E, behavior: 'rock', cooldown: [2.2, 3.4] },
+  { col: 5, row: ROW_D, behavior: 'vinegar', cooldown: [3.5, 5] },
+  { col: 18, row: ROW_C, behavior: 'rock', cooldown: [2, 3.2] },
+  { col: 5, row: ROW_B, behavior: 'rock', cooldown: [1.8, 3] },
+];
+
+// Wave-gated skin pool for rock-spawn posts (v7 §1.2, verbatim table).
+// Waves progress globally across the run and are capped at 6; once a skin
+// is introduced it stays in the pool.
+function rockSkinPool(wave) {
+  if (wave <= 2) return ['rockthrower'];
+  if (wave <= 4) return ['rockthrower', 'archer'];
+  return ['rockthrower', 'archer', 'prospector'];
+}
+
+// Per-skin throw-arc tuning: each projectile is aimed to land exactly on the
+// player's position at throw time after `flight` seconds, so the arc always
+// looks right regardless of distance (v7 §1.3: Archer is flatter/faster —
+// shorter flight, lighter gravity — rather than reusing the rock's arc).
+const ARCS = {
+  rockthrower: { flight: 0.95, gravity: 1400, w: 10, h: 10 },
+  archer:      { flight: 0.5, gravity: 700, w: 14, h: 4 },
+  prospector:  { flight: 0.95, gravity: 1400, w: 10, h: 10 }, // v7 §1.4: plain rock-hit equivalent
+  vinegar:     { flight: 1.05, gravity: 1300, w: 10, h: 12 },
+};
+
+const STAGES = [
+  { name: 'MOUNTAIN VISTA', bg: 'assets/bg_mountainvista.png' },
+  { name: 'ROCKY CLIFF', bg: 'assets/bg_rockycliff.png' },
+  { name: 'ESMERALDA', bg: 'assets/bg_esmeralda.png' },
+  { name: 'PINE GROVE', bg: 'assets/bg_pinegrove.png' },
+  { name: 'JUNCTION BAR', bg: 'assets/bg_junctionbar.png' },
+];
+
+const SKIN_SRC = {
+  rockthrower: 'assets/rockthrower.png',
+  archer: 'assets/archer.png',
+  prospector: 'assets/prospector.png',
+  vinegar: 'assets/soldier.png',
+};
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error(`failed to load ${src}`));
+    img.src = src;
+  });
+}
+
+async function loadAssets() {
+  const entries = [...STAGES.map((s) => [s.bg, s.bg]), ...Object.entries(SKIN_SRC)];
+  const images = {};
+  await Promise.all(entries.map(async ([key, src]) => { images[key] = await loadImage(src); }));
+  return images;
+}
+
+function buildTileMap() {
+  const data = new Array(COLS * ROWS).fill(0);
+  for (const row of PLATFORM_ROWS) {
+    for (let col = 0; col < COLS; col++) data[row * COLS + col] = SOLID;
+  }
+  return new TileMap({ cols: COLS, rows: ROWS, tileSize: TILE, data, solid: [SOLID] });
+}
+
+function ladderAt(col, row) {
+  return LADDERS.find((l) => col === l.col && row >= l.top && row <= l.bottom);
+}
+
+const images = await loadAssets();
+const tilemap = buildTileMap();
+const input = new Input();
+
+const player = {
+  x: 2 * TILE, y: ROW_GROUND * TILE - 26, w: 20, h: 26, vx: 0, vy: 0,
+  climbing: null, invuln: 0, facing: 1,
+};
+const GRAVITY = 1600, MOVE_SPEED = 110, CLIMB_SPEED = 90, MAX_FALL = 500;
+
+let stageIndex = 0, wave = 1, lives = 3, waveTimer = 0;
+let projectiles = [], hazards = [];
+let postTimers = POSTS.map((p) => rand(...p.cooldown));
+
+function rand(min, max) { return min + Math.random() * (max - min); }
+
+function resetPlayerToStart() {
+  player.x = 2 * TILE; player.y = ROW_GROUND * TILE - player.h;
+  player.vx = 0; player.vy = 0; player.climbing = null; player.invuln = 1.5;
+}
+
+function loseLife() {
+  if (player.invuln > 0) return;
+  lives--;
+  if (lives <= 0) { game.change('gameover'); return; }
+  resetPlayerToStart();
+}
+
+function playerColumn() {
+  return Math.floor((player.x + player.w / 2) / TILE);
+}
+
+function updatePlayer(dt) {
+  if (player.invuln > 0) player.invuln -= dt;
+
+  if (player.climbing) {
+    const ladder = player.climbing;
+    const wantUp = input.isDown('up'), wantDown = input.isDown('down');
+    if (wantUp) player.y -= CLIMB_SPEED * dt;
+    if (wantDown) player.y += CLIMB_SPEED * dt;
+    const topY = ladder.top * TILE - player.h;
+    const bottomY = ladder.bottom * TILE - player.h;
+    if (player.y <= topY) { player.y = topY; player.climbing = null; player.vy = 0; }
+    else if (player.y >= bottomY) { player.y = bottomY; player.climbing = null; player.vy = 0; }
+    if (input.isDown('left') || input.isDown('right')) player.climbing = null;
+    return;
+  }
+
+  const moveLeft = input.isDown('left'), moveRight = input.isDown('right');
+  player.vx = (Number(moveRight) - Number(moveLeft)) * MOVE_SPEED;
+  if (moveLeft) player.facing = -1;
+  if (moveRight) player.facing = 1;
+  player.vy = Math.min(player.vy + GRAVITY * dt, MAX_FALL);
+
+  moveAndCollide(player, tilemap, dt);
+
+  const col = playerColumn();
+  const row = Math.round((player.y + player.h) / TILE);
+  const ladder = ladderAt(col, row);
+  if (ladder && (input.isDown('up') || input.isDown('down'))) {
+    const onTop = row === ladder.top, onBottom = row === ladder.bottom;
+    if ((onTop && input.isDown('down')) || (onBottom && input.isDown('up'))) {
+      player.climbing = ladder;
+      player.x = ladder.col * TILE + (TILE - player.w) / 2;
+      player.vx = 0; player.vy = 0;
+    }
+  }
+}
+
+function throwProjectile(post, kind) {
+  const arc = ARCS[kind];
+  const x0 = post.col * TILE + TILE / 2, y0 = post.row * TILE;
+  const x1 = player.x + player.w / 2, y1 = player.y + player.h / 2;
+  const T = arc.flight;
+  const vx = (x1 - x0) / T;
+  const vy = (y1 - y0) / T - 0.5 * arc.gravity * T;
+  projectiles.push({
+    x: x0, y: y0, vx, vy, gravity: arc.gravity, w: arc.w, h: arc.h,
+    kind, t: 0, life: T + 0.15,
+  });
+}
+
+function updateWave(dt) {
+  waveTimer += dt;
+  if (waveTimer > 16 && wave < 6) { wave++; waveTimer = 0; }
+}
+
+function updatePosts(dt) {
+  POSTS.forEach((post, i) => {
+    postTimers[i] -= dt;
+    if (postTimers[i] > 0) return;
+    postTimers[i] = rand(...post.cooldown);
+    if (post.behavior === 'vinegar') {
+      throwProjectile(post, 'vinegar');
+    } else {
+      const pool = rockSkinPool(wave);
+      throwProjectile(post, pool[Math.floor(Math.random() * pool.length)]);
+    }
+  });
+}
+
+function updateProjectiles(dt) {
+  const survivors = [];
+  for (const p of projectiles) {
+    p.t += dt;
+    p.x += p.vx * dt;
+    p.vy += p.gravity * dt;
+    p.y += p.vy * dt;
+    const rect = { x: p.x - p.w / 2, y: p.y - p.h / 2, w: p.w, h: p.h };
+    if (player.invuln <= 0 && intersects(rect, player)) { loseLife(); continue; }
+    if (p.t >= p.life) {
+      if (p.kind === 'vinegar') hazards.push({ x: p.x - 12, y: p.y - 8, w: 24, h: 16, life: 3 });
+      continue;
+    }
+    survivors.push(p);
+  }
+  projectiles = survivors;
+}
+
+function updateHazards(dt) {
+  const survivors = [];
+  for (const h of hazards) {
+    h.life -= dt;
+    if (player.invuln <= 0 && intersects(h, player)) loseLife();
+    if (h.life > 0) survivors.push(h);
+  }
+  hazards = survivors;
+}
+
+function checkGoal() {
+  if (!intersects(player, GOAL_ZONE)) return;
+  if (stageIndex >= STAGES.length - 1) { game.change('win'); return; }
+  stageIndex++;
+  projectiles = []; hazards = [];
+  resetPlayerToStart();
+}
+
+function drawBackground() {
+  ctx.drawImage(images[STAGES[stageIndex].bg], 0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = 'rgba(10,10,10,0.35)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+}
+
+function drawPlatforms() {
+  ctx.fillStyle = '#3a2a1a';
+  for (const row of PLATFORM_ROWS) ctx.fillRect(0, row * TILE, canvas.width, 8);
+}
+
+function drawLadders() {
+  ctx.strokeStyle = '#c9a15a';
+  ctx.lineWidth = 3;
+  for (const l of LADDERS) {
+    const x0 = l.col * TILE + 6, x1 = l.col * TILE + TILE - 6;
+    const yTop = l.top * TILE, yBot = l.bottom * TILE + 8;
+    ctx.beginPath(); ctx.moveTo(x0, yTop); ctx.lineTo(x0, yBot); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x1, yTop); ctx.lineTo(x1, yBot); ctx.stroke();
+    for (let y = yTop + 8; y < yBot; y += 12) {
+      ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke();
+    }
+  }
+}
+
+function drawGoal() {
+  ctx.fillStyle = '#ffce4a';
+  ctx.fillRect(GOAL_ZONE.x, GOAL_ZONE.y, GOAL_ZONE.w, GOAL_ZONE.h);
+  ctx.fillStyle = '#3a2a1a';
+  ctx.font = 'bold 12px monospace';
+  ctx.fillText('STAKE', GOAL_ZONE.x + 8, GOAL_ZONE.y + 18);
+}
+
+function drawPosts() {
+  for (const post of POSTS) {
+    const skin = post.behavior === 'vinegar' ? 'vinegar' : rockSkinPool(wave).slice(-1)[0];
+    const img = images[skin];
+    const h = 40, w = h * (img.width / img.height);
+    ctx.drawImage(img, post.col * TILE + TILE / 2 - w / 2, post.row * TILE - h, w, h);
+  }
+}
+
+function drawPlayer() {
+  if (player.invuln > 0 && Math.floor(player.invuln * 10) % 2 === 0) return;
+  ctx.fillStyle = '#5ec6ff';
+  ctx.fillRect(player.x, player.y, player.w, player.h);
+}
+
+function drawProjectiles() {
+  for (const p of projectiles) {
+    ctx.fillStyle = p.kind === 'archer' ? '#e8e0c0' : p.kind === 'vinegar' ? '#7bd66a' : p.kind === 'prospector' ? '#5ec6ff' : '#999';
+    ctx.beginPath();
+    ctx.ellipse(p.x, p.y, p.w / 2, p.h / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawHazards() {
+  ctx.fillStyle = 'rgba(123,214,106,0.55)';
+  for (const h of hazards) ctx.fillRect(h.x, h.y, h.w, h.h);
+}
+
+function render() {
+  drawBackground();
+  drawPlatforms();
+  drawLadders();
+  drawGoal();
+  drawPosts();
+  drawHazards();
+  drawProjectiles();
+  drawPlayer();
+  document.getElementById('stageNum').textContent = stageIndex + 1;
+  document.getElementById('stageName').textContent = STAGES[stageIndex].name;
+  document.getElementById('waveNum').textContent = wave;
+  document.getElementById('lives').textContent = lives;
+}
+
+const overlay = document.getElementById('overlay');
+const overlayTitle = document.getElementById('overlayTitle');
+const startBtn = document.getElementById('startBtn');
+
+const game = new StateMachine({
+  playing: {
+    update(dt) {
+      updatePlayer(dt);
+      updateWave(dt);
+      updatePosts(dt);
+      updateProjectiles(dt);
+      updateHazards(dt);
+      checkGoal();
+      input.endFrame();
+    },
+    render,
+  },
+  gameover: {
+    enter() { overlay.style.display = 'flex'; overlayTitle.textContent = 'CLAIM LOST'; startBtn.textContent = 'TRY AGAIN'; },
+    render,
+  },
+  win: {
+    enter() { overlay.style.display = 'flex'; overlayTitle.textContent = 'CLAIM STAKED!'; startBtn.textContent = 'PLAY AGAIN'; },
+    render,
+  },
+}, 'gameover');
+overlayTitle.textContent = 'CLAIMJUMPER';
+startBtn.textContent = 'STAKE YOUR CLAIM';
+
+function startRun() {
+  stageIndex = 0; wave = 1; waveTimer = 0; lives = 3;
+  projectiles = []; hazards = [];
+  postTimers = POSTS.map((p) => rand(...p.cooldown));
+  resetPlayerToStart();
+  overlay.style.display = 'none';
+  game.change('playing');
+}
+
+startBtn.addEventListener('click', startRun);
+
+const loop = new GameLoop({
+  update: (dt) => game.update(dt),
+  render: () => game.render(ctx),
+});
+loop.start();
+
+window.__claimjumper = { player, game, loop, wave, get stageIndex() { return stageIndex; }, get lives() { return lives; }, get wave() { return wave; }, projectiles, hazards, startRun };
+</script>
+</body>
+</html>
