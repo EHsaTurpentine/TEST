@@ -1,76 +1,69 @@
-# CLAIMJUMPER — design notes (reconstructed baseline + v7)
+# CLAIMJUMPER — design notes
 
-The original v1–v6 GDDs were never committed and were lost when their chat
-sessions ended. This file is a **from-scratch reconstruction** of the base
-game (marked as such below) inferred from `CLAIMJUMPER_v7_GDD.md` — which is
-only a decision-log addendum and assumes a base game already exists — plus
-the delivered art. Treat anything below not cited to v7 as a judgment call,
-open to correction.
+## Correction
 
-Keeping this file up to date (instead of leaving the design only in chat) is
-the actual fix for the "sessions keep timing out and we lose everything"
-problem that started this whole effort.
+An earlier version of this file described a Donkey-Kong-style climbing
+game, built on nothing but the `v7_GDD.md` addendum (which only lists
+deltas and assumes a base game already exists) after the real v1–v6 code
+was believed lost. That guess was wrong — the real `claimjumper_6.html`
+browser build later turned up and is now `claimjumper/index.html`. This
+file replaces the incorrect one with what the real game actually is.
 
-## Premise (reconstructed)
+## What CLAIMJUMPER actually is
 
-A prospector climbs a claim site — ladders and platforms over a river
-landscape — to plant a stake at the top before the site's defenders knock
-them off. 5 stages, one per background: Mountain Vista → Rocky Cliff →
-Esmeralda → Pine Grove → Junction Bar (`v7 §2`, all five now confirmed
-distinct by hash).
+A single-screen spearfishing arcade game. The player stands on a river
+platform/trestle, aims a spear with the mouse (arrow keys/A-D as a
+fallback), holds Space or clicks to charge a throw, and releases to spear
+fish swimming past for points. Six waves (`WAVES` array), each harder than
+the last. 3 lives, 3 credits (continues), streak bonuses, a session-wide
+species/catch trophy row, title/wave-intro/tally/continue/end screens.
 
-## Core loop (reconstructed)
+**Miners** are the hazard, not the goal: rival claim-jumpers posted on the
+platform who throw rocks (or dive in as a "jumper" variant) at the player;
+getting hit costs a life. A separate **vinegar-miner** — scheduled to
+appear on one of waves 3–6 — throws a vinegar bottle instead, a distinct
+hazard from the plain rock hit.
 
-- Single-screen-per-stage vertical platformer (no camera scroll): solid
-  platform rows connected by ladders, à la Donkey Kong.
-- Player walks platforms, climbs ladders (vertical-only movement, gravity
-  off, locked to the ladder's column while climbing).
-- Defenders ("miners") are posted on platforms and periodically throw a
-  projectile at the player. Getting hit costs a life and resets the player
-  to the stage's bottom platform.
-- Reaching the top platform clears the stage and advances to the next
-  background; clearing stage 5 wins.
-- 3 lives, shared across the run (matches `cutting_season.html`'s HUD
-  convention for this engine-sharing family of games).
+A **progressive spear-buff system** (`BUFFS`/`BUFF_PRIORITY`/`hasBuff`) is
+fully implemented in the code but deliberately disabled at the source
+(`G.buffsAvail` is never populated, so every buff branch falls through to
+its unbuffed default) — this is the "dormant buff-drop system" the v7 doc
+lists as out of scope, not a bug.
 
-## Miners: skins and behavior (`v7 §1.1–§1.4`)
+Art is mostly real sprites embedded as base64 (`SPR_DATA` /
+`SPR_MINER_DATA` / etc.: player figure, miner, spear, fish, sky/pool/
+scene/deck/trestle backgrounds) with vector-drawn fallbacks if a sprite
+fails to decode. The one asset not embedded, `claimjumper-images/qr.png`
+(shown on the end-credits panel), isn't in this repo — the game already
+degrades gracefully to "QR UNAVAILABLE" without it.
 
-Two underlying spawn behaviors, four skins:
+## What's actually wired to `engine/` so far
 
-| Behavior | Skins | Projectile |
-|---|---|---|
-| rock-spawn | Rock-Thrower, Archer, Prospector | lobbed arc by default |
-| vinegar-spawn | Miner/Soldier | thrown bottle, shatters into a brief ground hazard on landing |
+Only the fixed-timestep game loop. The original hand-rolled accumulator
+(`let lastT=...; acc=...; function frame(now){...}; requestAnimationFrame`)
+is replaced with `engine/core/loop.js`'s `GameLoop`, configured with the
+exact same 30Hz step and 6-updates-per-frame cap the original used
+(`STEP_MS=1000/30`, `iter<6`) — a drop-in swap, not a rewrite. Everything
+else (input handling, physics, rendering, the `G.mode` string state
+machine, audio) is untouched.
 
-- **Rock-Thrower / Prospector**: identical lobbed-arc projectile (gravity-
-  affected, moderate speed). Prospector's gem/nugget is a reskin only —
-  "behaves identically to a rock hit" (`v7 §1.4`).
-- **Archer**: distinct flatter/faster throw-arc — less gravity drop, shorter
-  flight time (`v7 §1.3`). Implemented as separate arc constants, not a
-  reused rock trajectory.
-- **Miner/Soldier (vinegar)**: thrown bottle arcs down and, on landing,
-  leaves a puddle hazard that lingers briefly — distinguishing it from a
-  plain projectile hit while still being "just a thrown item" mechanically.
+This was a deliberately narrow, low-risk first pass: this file is a large
+(2300-line), carefully tuned, already-working game — full of comments
+documenting specific bugs found and fixed (e.g. a mouse-vs-keyboard aim
+race) and deliberately-chosen constants (e.g. `MOVE_SPEED = 1.6 // was
+1.1 -- snappier dodge`). Rewriting its input handling or state machine
+onto `engine/Input`/`engine/StateMachine` for architectural purity risked
+regressing behavior that's already right, for no functional gain — so
+that wasn't done.
 
-## Wave-gated skin pool (`v7 §1.2`, verbatim)
+## Open next steps (not yet done)
 
-Waves progress globally across the run (not per-stage), capped at 6:
-
-- Waves 1–2: Rock-Thrower only.
-- Waves 3–4: Rock-Thrower + Archer.
-- Waves 5–6: Rock-Thrower + Archer + Prospector.
-- Once introduced, a skin stays in the pool.
-- Miner/Soldier's vinegar-spawn timing is scheduled independently and is
-  unaffected by wave gating (`v7 §1.2`, last line).
-
-## Explicitly out of scope (`v7 §4`, unchanged)
-
-Rival-angler ("jumper") miner, the buff-drop system, and the willow-weir
-mechanic are not implemented. The fishing-ladder net and the pier are
-decorative only (`v7 §1.5–§1.6`) — drawn, not interactive.
-
-## Engine usage
-
-Built on `engine/` (`GameLoop`, `Input`, `StateMachine`, `TileMap`,
-`moveAndCollide`) rather than reinventing loop/collision/input code inline,
-per the point of building the shared engine in the first place.
+- **v7's skin system**: `v7_GDD.md` describes adding Rock-Thrower/Archer/
+  Prospector as three interchangeable skins on the rock-spawn behavior
+  (currently one generic miner look) and Miner/Soldier as the vinegar-
+  spawn skin, wave-gated per its §1.2 table, plus Archer's distinct
+  flatter/faster throw arc. The four character-skin PNGs and five level-
+  background PNGs already sourced for this sit in `claimjumper/assets/`,
+  unused by the game so far — that's a separate, larger change from the
+  loop-swap done here and hasn't been started.
+- `qr.png` for the end panel, if wanted.
