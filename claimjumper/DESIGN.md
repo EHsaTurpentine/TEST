@@ -178,6 +178,77 @@ anchored at the plank's near top corner and centered on the same x the old
 procedural pier occupied. Verified with a real miner standing on it: feet
 land cleanly on the plank, no positioning mismatch, no console errors.
 
+## Polish round: alignment, visibility, and per-wave scenes
+
+A round of feedback after playing the art integrations live, addressed
+together:
+
+**Tower ghost-feet fix.** `player_tower.png`'s original character-erasure
+box (from the very first extraction pass) cut off a few pixels short of
+the actual feet, leaving two small skin-toned fragments sitting on the
+platform surface — visible as stray feet from "someone" who wasn't there.
+Found by cropping and checkering the exact region, erased directly, and
+the asset re-verified clean end to end.
+
+**Spear-to-reticle alignment.** `PLAYER_FIG_SPECS` now also carries
+`renderAngle` — each pose's own actual baked-in throw angle (roughly hand-
+to-tip, measured by inspection), separate from `angle` (the assigned
+bucket-selection label spread across 8-88). The six poses' real angles
+only span about -14 to +26 degrees regardless of bucket, well short of
+the game's range, so at extreme aim the weapon barely visually moves while
+the reticle sweeps the full 80 degrees. `drawFigure()` now applies a small
+corrective rotation — `target angle - bucket.renderAngle`, capped at
+±20° — around the same planted-foot pivot already used for the six-bucket
+system. The cap matters: an *uncapped* rotation is exactly the
+single-pose-plus-rotation approach two commits back that read as the
+character collapsing forward: ±20° is comfortably inside the ±15° that
+was already confirmed clean, only reached at the largest realistic
+residuals.
+
+**Reticle redesign.** The old aim mark was a plain 6px gold X with no
+outline — invisible against anything gold or light. `drawReticle()`
+(new, by `drawSpear()`) draws a ring + four outward ticks in two passes —
+a dark halo then bright gold, the same two-pass idiom `haloText()` already
+uses for on-screen text — so it reads against sky, water, and rock alike.
+
+**Pier bulk-up.** The pier reference photo only showed a bare post, which
+read as much thinner than the tower even after scaling. Rather than
+invent structure that isn't in the source, cropped a net-braced leg
+section directly from `player_tower.png` (`miner_pier_legs.png`) and draw
+it under the post, continuing it down toward the water — guaranteed
+visual-family match since it's literally the same source art, not just a
+similar style.
+
+**Backgrounds are now the live `PLAY` scene, not just `WAVEINTRO`.**
+Reverses the caveat two sections up. `drawSky()` now checks
+`waveBackdrop()` before `SPR.sceneImg`, and since `drawPlay()` already
+calls `drawSky()` first, this was the entire change needed to make each
+wave's background the actual playing field — `drawWater()`'s existing
+"scene backdrop already painted this region" skip (previously keyed only
+off `SPR.sceneImg`) now also recognizes `waveBackdrop()`, and
+`drawCanyonWalls()`'s corner rock-accent (shaped for the *original*
+scene's specific composition) is skipped when a wave backdrop is active,
+since it would just sit as a mismatched wedge over a different photo.
+Checked the water-line position in all five background images against
+`WATER_Y` first — all close enough that fish/miners/platform/tower still
+read as grounded in the new water. Verified: waves 2 and 4 render visibly
+distinct real backgrounds during actual `PLAY`, not just their intro
+cards.
+
+**Per-wave tower/pier position + tilt.** `startWave()` now rolls
+`G.towerCx`/`G.towerRot` (±8px / ±6°) and `G.pierCx`/`G.pierRot` (±15px /
+±8°) once per wave. `drawPlatform()`/`drawMinerPier()` rotate around each
+structure's own anchor point (the player's planted foot for the tower, the
+plank's near corner for the pier) rather than the image's own center, so
+the player/miner — drawn separately, deliberately *not* rotated — still
+reads as standing on the tilted structure instead of floating off it.
+Deliberately does not touch any actual gameplay coordinate (`OBS_X`,
+`PLAYER_MIN`/`PLAYER_MAX`, the miners' spawn `tx` range) — only where the
+art is drawn, so movement, spawning, and hit-detection are unaffected.
+Verified via real wave progression (not just direct state edits): waves 1
+and 2 land on genuinely different rolled positions/rotations, and a miner
+placed on wave 2's repositioned pier still stands on it correctly.
+
 ## Remaining assets
 
 `claimjumper-images/qr.png` (the end-panel QR code) is in place — decodes

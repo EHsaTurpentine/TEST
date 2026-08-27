@@ -128,10 +128,15 @@ function waveBackdrop(){
 // Loaded independently, same graceful-fallback spirit as SKINS/WAVE_BGS: if
 // either fails to load, drawFigure/drawPlatform fall back to their existing
 // rendering rather than breaking.
-const PLAYER_ART = { tower: null, pier: null };
+const PLAYER_ART = { tower: null, pier: null, pierLegs: null };
 (function loadPlayerArt(){
   const t = new Image(); t.onload = () => { PLAYER_ART.tower = t; }; t.src = 'assets/player_tower.png';
   const p = new Image(); p.onload = () => { PLAYER_ART.pier = p; }; p.src = 'assets/miner_pier.png';
+  // The pier reference photo only showed a bare post -- cropped from the
+  // SAME tower art (a net-braced leg section) to give it real structural
+  // weight instead of reading as a thin stick, per direction ("get it
+  // looking more like the fishing tower").
+  const pl = new Image(); pl.onload = () => { PLAYER_ART.pierLegs = pl; }; pl.src = 'assets/miner_pier_legs.png';
 })();
 
 // Six purpose-made angle-bucket poses for the player figure (superseding
@@ -144,13 +149,21 @@ const PLAYER_ART = { tower: null, pier: null };
 // 8-88 aim range, assigned by the set's naming order (up_soft -> shallowest,
 // down_steep -> steepest) rather than back-measuring the art's rendered
 // angle, which was too imprecise to trust at this scale.
+// renderAngle is that back-measurement anyway (hand-to-tip vector, degrees,
+// same convention as sp.angle) -- used only for the small corrective spear
+// rotation in drawFigure() below, not for bucket selection. The six poses'
+// own baked-in throw angle only spans roughly -14 to +26 degrees regardless
+// of which bucket, well short of the game's 8-88 range, so at extreme aim
+// angles the weapon reads as barely moving while the reticle sweeps the
+// full range -- the correction closes part of that gap without the whole
+// body swinging (capped, see drawFigure()).
 const PLAYER_FIG_SPECS = [
-  { file:'assets/figure_up_soft.png',   angle:8,  anchorX:195, anchorY:375 },
-  { file:'assets/figure_level.png',     angle:24, anchorX:212, anchorY:363 },
-  { file:'assets/figure_down_soft.png', angle:40, anchorX:222, anchorY:360 },
-  { file:'assets/figure_down_mid.png',  angle:56, anchorX:205, anchorY:352 },
-  { file:'assets/figure_down_hard.png', angle:72, anchorX:162, anchorY:347 },
-  { file:'assets/figure_down_steep.png',angle:88, anchorX:197, anchorY:352 },
+  { file:'assets/figure_up_soft.png',   angle:8,  anchorX:195, anchorY:375, renderAngle:-14 },
+  { file:'assets/figure_level.png',     angle:24, anchorX:212, anchorY:363, renderAngle:-3 },
+  { file:'assets/figure_down_soft.png', angle:40, anchorX:222, anchorY:360, renderAngle:7 },
+  { file:'assets/figure_down_mid.png',  angle:56, anchorX:205, anchorY:352, renderAngle:16 },
+  { file:'assets/figure_down_hard.png', angle:72, anchorX:162, anchorY:347, renderAngle:24 },
+  { file:'assets/figure_down_steep.png',angle:88, anchorX:197, anchorY:352, renderAngle:26 },
 ];
 const PLAYER_FIG_BUCKETS = [];
 (function loadPlayerFigBuckets(){
@@ -494,6 +507,7 @@ let G = {
   banner:null,
   portraitFlinch:0, // v4.1: repurposed as heartFlinch's backing timer (kept the field name stable, see drawHearts)
   continueT:0,
+  towerCx:65, towerRot:0, pierCx:370, pierRot:0,
 };
 let prevSpace = false, prevA = false;
 
@@ -525,6 +539,16 @@ function startWave(){
   G.spawnTimer = 30; G.spawned = 0;
   G.minerTimer = G.w.minerFirst*30;
   G.banner = null;
+  // Per-wave visual variety for the tower/pier art (position + a small
+  // tilt), so waves don't all look like the exact same photo with a
+  // different sky behind it -- per direction. Kept modest and re-rolled
+  // once per wave, not touching any of the actual gameplay coordinates
+  // (OBS_X, PLAYER_MIN/MAX, the miners' spawn tx range) so movement,
+  // spawning, and collision are unaffected -- only where the art is drawn.
+  G.towerCx = 65 + rnd(-8, 8);
+  G.towerRot = rnd(-6, 6) * D2R;
+  G.pierCx = 370 + rnd(-15, 15);
+  G.pierRot = rnd(-8, 8) * D2R;
   if (G.wave===6) G.vinegarSecondPlanned = Math.random()<0.15; // GDD §7.1 optional stretch
   G.mode='WAVEINTRO'; G.t=0;
 }
@@ -1215,6 +1239,15 @@ function drawSky(){
   // stretched independently distorted the scene's actual proportions. This
   // is one image at one uniform scale (the source crop's aspect ratio was
   // chosen to exactly match LW:LH, so there's no stretch in either axis).
+  // Per-wave background stills, now the live PLAY scene too (not just the
+  // WAVEINTRO card) -- each stage gets its own real backdrop rather than
+  // one fixed scene throughout. Checked before SPR.sceneImg so it takes
+  // over the exact same "whole scene in one image" role.
+  const bg = waveBackdrop();
+  if (bg){
+    ctx.drawImage(bg, 0, 0, LW, LH);
+    return;
+  }
   if (SPR.ready && SPR.sceneImg){
     ctx.drawImage(SPR.sceneImg, 0, 0, LW, LH);
     return;
@@ -1224,6 +1257,10 @@ function drawSky(){
   ctx.fillStyle = g; ctx.fillRect(0,0,LW,WATER_Y+4);
 }
 function drawCanyonWalls(){
+  // Skip the corner rock-wall accent over a per-wave photo backdrop -- it
+  // was shaped to complement the original scene's specific composition and
+  // would just sit as a mismatched wedge over these.
+  if (waveBackdrop()) return;
   ctx.fillStyle = PAL.rockMd;
   ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(46,0); ctx.lineTo(20,38); ctx.lineTo(0,34); ctx.closePath(); ctx.fill();
   ctx.fillStyle = 'rgba(255,255,255,0.10)';
@@ -1238,7 +1275,7 @@ function drawCanyonWalls(){
 // dedicated water-only asset again.
 const BG_SCALE = 0.30;
 function drawWater(l, r, top, bot, t){
-  if (SPR.ready && SPR.sceneImg){
+  if (waveBackdrop() || (SPR.ready && SPR.sceneImg)){
     // scene backdrop already painted this region; nothing to fill
   } else if (SPR.ready && SPR.poolImg){
     ctx.drawImage(SPR.poolImg, l, top, r-l, bot-top);
@@ -1301,8 +1338,30 @@ function drawMinerPier(){
     const img = PLAYER_ART.pier;
     const anchorX = 61, anchorY = 23;
     const scale = 0.30;
-    const cx = 370;
-    ctx.drawImage(img, cx - anchorX * scale, WATER_Y - anchorY * scale, img.width * scale, img.height * scale);
+    // G.pierCx/pierRot: a small per-wave position+tilt roll (see
+    // startWave()), same idea as the tower's. Rotated around the plank's
+    // own anchor point so the miner (drawn separately at its fixed
+    // spawn/stand x) still reads as standing on it at this tilt.
+    ctx.save();
+    ctx.translate(G.pierCx, WATER_Y);
+    ctx.rotate(G.pierRot);
+    const postLocalX = -anchorX * scale, postLocalY = -anchorY * scale;
+    if (PLAYER_ART.pierLegs){
+      // Reused net-braced leg section from the tower art, continuing the
+      // post down toward the water so the pier reads as a real structure
+      // instead of a bare stick -- the pier reference photo only showed
+      // the post itself.
+      const legs = PLAYER_ART.pierLegs;
+      const legsScale = 0.28;
+      const legsAnchorX = 90, legsAnchorY = 0;
+      const postBottomX = 75, postBottomY = 172; // where the post exits this crop
+      const attachX = postLocalX + postBottomX * scale;
+      const attachY = postLocalY + postBottomY * scale;
+      ctx.drawImage(legs, attachX - legsAnchorX * legsScale, attachY - legsAnchorY * legsScale,
+        legs.width * legsScale, legs.height * legsScale);
+    }
+    ctx.drawImage(img, postLocalX, postLocalY, img.width * scale, img.height * scale);
+    ctx.restore();
     return;
   }
   const l = 338, r = 402, y = WATER_Y;
@@ -1328,8 +1387,15 @@ function drawPlatform(oy){
     const targetBottom = 226; // where the submerged base/splash should land
     const scale = (targetBottom - oy) / (img.height - anchorY);
     const dw = img.width * scale, dh = img.height * scale;
-    const cx = 65;
-    ctx.drawImage(img, cx - anchorX * scale, oy - anchorY * scale, dw, dh);
+    // G.towerCx/towerRot: a small per-wave position+tilt roll (see
+    // startWave()) so the tower doesn't look identical every wave. Rotated
+    // around the player's own foot point, not the image center, so the
+    // (separately-drawn, unrotated) player figure still lines up with it.
+    ctx.save();
+    ctx.translate(G.towerCx, oy);
+    ctx.rotate(G.towerRot);
+    ctx.drawImage(img, -anchorX * scale, -anchorY * scale, dw, dh);
+    ctx.restore();
     return;
   }
   // v3.0.5: fixed two problems flagged in review. (1) Scale was arbitrary
@@ -1426,7 +1492,19 @@ function drawFigure(ox, oy, braced, moving, aimAngle, spState, chargeK){
   if (figBucket && spriteEligible){
     const scale = 34 / 390; // matches the old sprite's ~34px-tall convention
     const dw = figBucket.img.width * scale, dh = figBucket.img.height * scale;
-    ctx.drawImage(figBucket.img, ox - figBucket.anchorX * scale, oy - figBucket.anchorY * scale, dw, dh);
+    // Small corrective rotation closing the gap between this bucket's own
+    // baked-in throw angle and the true current aim angle (see
+    // PLAYER_FIG_SPECS comment) -- capped at +-20deg, the range already
+    // confirmed clean (vs. a full uncapped delta, confirmed broken-looking)
+    // when this same rotate-around-the-planted-foot technique was tried
+    // for the single-pose predecessor of this bucket system.
+    const target = aimAngle !== undefined ? aimAngle : 48;
+    const correction = clamp(target - figBucket.renderAngle, -20, 20) * D2R;
+    ctx.save();
+    ctx.translate(ox, oy);
+    ctx.rotate(correction);
+    ctx.drawImage(figBucket.img, -figBucket.anchorX * scale, -figBucket.anchorY * scale, dw, dh);
+    ctx.restore();
     return;
   }
   if (SPR.ready && SPR.figImg && spriteEligible){
@@ -1493,6 +1571,28 @@ function drawFigure(ox, oy, braced, moving, aimAngle, spState, chargeK){
 // static extracted image is real work I didn't have budget for this pass,
 // so those keep the original procedural version, unchanged, exactly as
 // before. Only the plain spear (no buff) is upgraded.
+// Upgraded aim reticle -- a ring + four outward ticks, drawn twice (a dark
+// halo pass then the bright gold pass, same two-pass idiom as haloText())
+// so it reads against sky, water, and rock alike. Replaces a plain 6px
+// gold X with no halo, which disappeared against anything gold/light.
+function drawReticle(x, y){
+  const r = 4.5;
+  function pass(color, width){
+    ctx.strokeStyle = color; ctx.lineWidth = width;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x - r - 4, y); ctx.lineTo(x - r + 1, y);
+    ctx.moveTo(x + r - 1, y); ctx.lineTo(x + r + 4, y);
+    ctx.moveTo(x, y - r - 4); ctx.lineTo(x, y - r + 1);
+    ctx.moveTo(x, y + r - 1); ctx.lineTo(x, y + r + 4);
+    ctx.stroke();
+  }
+  pass('rgba(20,14,8,0.8)', 3);
+  pass(PAL.gold, 1.4);
+  ctx.fillStyle = PAL.gold;
+  ctx.beginPath(); ctx.arc(x, y, 1, 0, Math.PI * 2); ctx.fill();
+}
+
 const SPEAR_BUFF_KEYS = ['quickhaft','ironhead','obsidianedge','leistertines','pitchtorch','searunline'];
 function drawSpear(x1, y1, x2, y2, headSize, buffA, buffB){
   const buffed = SPEAR_BUFF_KEYS.includes(buffA) || SPEAR_BUFF_KEYS.includes(buffB);
@@ -2051,8 +2151,7 @@ function drawPlay(){
     if (ex > LW){ ex = LW; ey = oy+(LW-ox)*Math.tan(a); }
     ctx.strokeStyle = 'rgba(43,29,16,0.55)'; ctx.lineWidth=1;
     dashedLine(ox+3, oy-6, ex, ey);
-    ctx.strokeStyle = PAL.gold; ctx.lineWidth=1.2;
-    ctx.beginPath(); ctx.moveTo(ex-3,ey-3); ctx.lineTo(ex+3,ey+3); ctx.moveTo(ex-3,ey+3); ctx.lineTo(ex+3,ey-3); ctx.stroke();
+    drawReticle(ex, ey);
   }
   if (sp.live){
     let n = Math.sqrt(sp.vx*sp.vx+sp.vy*sp.vy); if (n===0) n=1;
