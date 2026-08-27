@@ -19,10 +19,10 @@ the last. 3 lives, 3 credits (continues), streak bonuses, a session-wide
 species/catch trophy row, title/wave-intro/tally/continue/end screens.
 
 **Miners** are the hazard, not the goal: rival claim-jumpers posted on the
-platform who throw rocks (or dive in as a "jumper" variant) at the player;
-getting hit costs a life. A separate **vinegar-miner** — scheduled to
-appear on one of waves 3–6 — throws a vinegar bottle instead, a distinct
-hazard from the plain rock hit.
+platform who throw rocks at the player (getting hit costs a life), or —
+the separate "jumper" (rival-angler) variant — just steal a fish instead
+of throwing anything. A distinct **vinegar-miner**, scheduled to appear on
+one of waves 3–6, throws a vinegar bottle instead of a rock.
 
 A **progressive spear-buff system** (`BUFFS`/`BUFF_PRIORITY`/`hasBuff`) is
 fully implemented in the code but deliberately disabled at the source
@@ -56,14 +56,41 @@ onto `engine/Input`/`engine/StateMachine` for architectural purity risked
 regressing behavior that's already right, for no functional gain — so
 that wasn't done.
 
+## v7's skin system (implemented)
+
+Rock-spawn miners (`type==='rock'`) now get a `skin` field chosen from a
+wave-gated pool (`rockSkinPool()`, v7 §1.2 verbatim: waves 1–2
+Rock-Thrower only, 3–4 add Archer, 5–6 add Prospector); vinegar-spawn
+miners always get `skin:'soldier'`. The `'jumper'` (rival-angler) miner
+stays unskinned and untouched, per v7 §4.
+
+- `drawMiner`/`drawVinegarMiner` check `SKINS[m.skin]` first and draw the
+  flat PNG (`drawMinerSkin`) in place of the sprite-sheet body when it's
+  loaded, falling back to the existing rendering unchanged otherwise —
+  same "never hard-fail on an asset problem" pattern the file already
+  uses elsewhere. These are single static throwing-pose illustrations,
+  not a walk-cycle sheet, so a skinned miner holds the same pose through
+  walk/stand/wind rather than animating — a deliberate simplification
+  given the assets on hand, not a bug.
+- `throwRock` branches on `m.skin==='archer'` for a shorter, lower-gravity
+  arc (flatter/faster per v7 §1.3); Rock-Thrower and Prospector share the
+  original arc unchanged (Prospector is a plain rock-hit equivalent per
+  §1.4). Verified directly: same target, archer's throw comes out faster
+  and with less vertical drop than rockthrower/prospector, which are
+  identical to each other.
+- Thrown-object color is tagged by skin too (gray rock / pale streak for
+  archer / gold for prospector's gem) so the different arcs read clearly
+  in flight, not just in the arc math.
+- Verified with Playwright: skin pool per wave matches the table exactly,
+  archer's arc is measurably faster/flatter than rockthrower's (confirmed
+  identical to prospector's), and all four skins render at a sane size,
+  correctly oriented toward the player, with no console errors.
+
+Images are loaded from `claimjumper/assets/` (already sourced, described
+above) independently of the base `SPR` sprite pipeline, so a missing skin
+file degrades to the original generic miner rather than breaking anything.
+
 ## Open next steps (not yet done)
 
-- **v7's skin system**: `v7_GDD.md` describes adding Rock-Thrower/Archer/
-  Prospector as three interchangeable skins on the rock-spawn behavior
-  (currently one generic miner look) and Miner/Soldier as the vinegar-
-  spawn skin, wave-gated per its §1.2 table, plus Archer's distinct
-  flatter/faster throw arc. The four character-skin PNGs and five level-
-  background PNGs already sourced for this sit in `claimjumper/assets/`,
-  unused by the game so far — that's a separate, larger change from the
-  loop-swap done here and hasn't been started.
-- `qr.png` for the end panel, if wanted.
+- `qr.png` for the end panel, if wanted — the game already degrades to
+  "QR UNAVAILABLE" without it.
