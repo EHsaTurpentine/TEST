@@ -92,6 +92,26 @@ const SKINS = { ready:false, rockthrower:null, archer:null, prospector:null, sol
   }
 })();
 
+// The five level-background stills, used as the WAVE INTRO card's backdrop
+// (one per wave, cycling), *not* the live PLAY scene: PLAY's water/bank/
+// platform/miners are laid out against drawSky()'s single scene image at
+// exact pixel coordinates (WATER_Y, BANK_X, etc.), so swapping that would
+// misalign everything currently drawn on top of it. WAVEINTRO is just
+// centered text over a full-bleed backdrop, so it's a safe place to show
+// this art without touching drawSky() or PLAY at all.
+const WAVE_BG_FILES = ['assets/bg_mountainvista.png','assets/bg_rockycliff.png','assets/bg_esmeralda.png','assets/bg_pinegrove.png','assets/bg_junctionbar.png'];
+const WAVE_BGS = [];
+(function loadWaveBackgrounds(){
+  WAVE_BG_FILES.forEach((src, i) => {
+    const img = new Image();
+    img.onload = () => { WAVE_BGS[i] = img; };
+    img.src = src;
+  });
+})();
+function waveBackdrop(){
+  return WAVE_BGS[(G.wave - 1) % WAVE_BG_FILES.length];
+}
+
 (function loadSprites(){
   let n=0, done=0;
   function chk(){ done++; if (done>=n) SPR.ready = true; }
@@ -2068,7 +2088,9 @@ function drawTitle(){
 }
 
 function drawWaveIntro(){
-  drawSky();
+  const bg = waveBackdrop();
+  if (bg) ctx.drawImage(bg, 0, 0, LW, LH);
+  else drawSky();
   boldCText('WAVE '+G.wave, 70, 26);
   ctext(G.w.name, 94, {font:'14px Georgia', color:'#4a3018'});
   ctext('PLATFORM: '+Math.floor(G.w.h/5)+' FEET', 114, {font:'12px Georgia', color:'#6b5030'});

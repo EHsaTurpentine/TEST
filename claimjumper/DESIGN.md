@@ -90,6 +90,26 @@ Images are loaded from `claimjumper/assets/` (already sourced, described
 above) independently of the base `SPR` sprite pipeline, so a missing skin
 file degrades to the original generic miner rather than breaking anything.
 
+## Level backgrounds (now wired in)
+
+The five level-background stills are used as the WAVE INTRO card's
+backdrop, one per wave (cycling: wave 1 = Mountain Vista, 2 = Rocky Cliff,
+3 = Esmeralda, 4 = Pine Grove, 5 = Junction Bar, 6 wraps back to Mountain
+Vista) via `waveBackdrop()`, replacing `drawWaveIntro()`'s call to
+`drawSky()` when a backdrop is loaded.
+
+They are deliberately **not** used as the live `PLAY` scene's background.
+`PLAY`'s water, bank, platform, and miners are all laid out against
+`drawSky()`'s single scene image at exact pixel coordinates (`WATER_Y`,
+`BANK_X`, etc.) — swapping that image per wave would misalign everything
+drawn on top of it. `drawSky()` itself is untouched; `PLAY` looks exactly
+as it did before. `WAVEINTRO` is just centered text over a full-bleed
+backdrop, so it was the safe place to actually show this art.
+
+Verified with Playwright: each wave (1-5, and 6 wrapping to 1's image)
+shows a distinct real background on its intro card, and the live PLAY
+screen's scene art is byte-for-byte the same as before this change.
+
 ## Remaining assets
 
 `claimjumper-images/qr.png` (the end-panel QR code) is in place — decodes
