@@ -90,7 +90,7 @@ Images are loaded from `claimjumper/assets/` (already sourced, described
 above) independently of the base `SPR` sprite pipeline, so a missing skin
 file degrades to the original generic miner rather than breaking anything.
 
-## Open next steps (not yet done)
+## Remaining assets
 
-- `qr.png` for the end panel, if wanted — the game already degrades to
-  "QR UNAVAILABLE" without it.
+`claimjumper-images/qr.png` (the end-panel QR code) is in place — decodes
+to `https://ehsaturpentine.github.io/ENGINE/engineer/`. No open items left.
