@@ -2085,6 +2085,12 @@ function drawTitle(){
   ctx.restore();
   ctext('PRESS ENTER TO START', 182, {font:'bold 13px Georgia', color:'#2b1d10'});
   rtext('CREDITS '+G.credits, LW-6, LH-6, {font:'11px Georgia', color:'#4a3018'});
+  // TEMPORARY diagnostic for the archer-skin-not-appearing report -- shows
+  // which skin images actually loaded, visible on-screen for a mobile
+  // player with no devtools access. Remove once diagnosed.
+  const skinStatus = ['rockthrower','archer','prospector','soldier']
+    .map(k => k[0].toUpperCase() + (SKINS[k] ? '✓' : '✗')).join(' ');
+  ltext('SKINS ' + skinStatus, 4, LH-4, {font:'9px Georgia', color:'#4a3018'});
 }
 
 function drawWaveIntro(){
