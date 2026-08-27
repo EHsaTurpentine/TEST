@@ -83,12 +83,23 @@ const SKINS = { ready:false, rockthrower:null, archer:null, prospector:null, sol
   const files = { rockthrower:'assets/rockthrower.png', archer:'assets/archer.png', prospector:'assets/prospector.png', soldier:'assets/soldier.png' };
   let n=0, done=0;
   function chk(){ done++; if (done>=n) SKINS.ready = true; }
-  for (const key in files){
-    n++;
+  // Retries a failed load up to 3 attempts (with a short, growing delay and
+  // a cache-busting query param so a retry doesn't just hit a cached
+  // failure) before giving up -- verified files are byte-valid PNGs
+  // identical in structure to ones that do load, so a load failure here
+  // is a transient network hiccup to recover from, not a bad asset.
+  function loadOne(key, src, attempt){
     const img = new Image();
     img.onload = () => { SKINS[key] = img; chk(); };
-    img.onerror = chk;
-    img.src = files[key];
+    img.onerror = () => {
+      if (attempt < 3) setTimeout(() => loadOne(key, src, attempt + 1), 400 * attempt);
+      else chk();
+    };
+    img.src = attempt === 1 ? src : (src + '?retry=' + attempt);
+  }
+  for (const key in files){
+    n++;
+    loadOne(key, files[key], 1);
   }
 })();
 
