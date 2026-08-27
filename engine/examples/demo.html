@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>engine demo</title>
+<style>
+  html, body { margin: 0; background: #0a0a0a; display: flex; align-items: center; justify-content: center; height: 100%; }
+  canvas { background: #111; border: 2px solid #444; image-rendering: pixelated; }
+</style>
+</head>
+<body>
+<canvas id="game" width="640" height="480"></canvas>
+<script type="module">
+import { GameLoop, Input, Camera, TileMap, moveAndCollide } from '../index.js';
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+const TILE = 32;
+const COLS = 24, ROWS = 18; // world bigger than the viewport, to exercise camera clamping
+const WALL = 1, FLOOR = 0;
+
+const data = new Array(COLS * ROWS).fill(FLOOR);
+for (let col = 0; col < COLS; col++) {
+  data[col] = WALL; // top row
+  data[(ROWS - 1) * COLS + col] = WALL; // bottom row
+}
+for (let row = 0; row < ROWS; row++) {
+  data[row * COLS] = WALL; // left column
+  data[row * COLS + (COLS - 1)] = WALL; // right column
+}
+// a lone interior wall to prove collision resolution, not just world edges
+data[8 * COLS + 10] = WALL;
+data[8 * COLS + 11] = WALL;
+
+const map = new TileMap({ cols: COLS, rows: ROWS, tileSize: TILE, data, solid: [WALL] });
+const camera = new Camera({
+  width: canvas.width,
+  height: canvas.height,
+  worldWidth: map.pixelWidth,
+  worldHeight: map.pixelHeight,
+});
+const input = new Input();
+const player = { x: TILE * 2, y: TILE * 2, w: 20, h: 20, vx: 0, vy: 0 };
+const SPEED = 140;
+
+const loop = new GameLoop({
+  update(dt) {
+    player.vx = (Number(input.isDown('right')) - Number(input.isDown('left'))) * SPEED;
+    player.vy = (Number(input.isDown('down')) - Number(input.isDown('up'))) * SPEED;
+    moveAndCollide(player, map, dt);
+    camera.follow(player.x + player.w / 2, player.y + player.h / 2);
+    input.endFrame();
+  },
+  render() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    camera.apply(ctx);
+    map.draw(ctx, camera, (id) => (id === WALL ? '#3a3a3a' : '#161616'));
+    ctx.fillStyle = '#5ec6ff';
+    ctx.fillRect(player.x, player.y, player.w, player.h);
+    ctx.restore();
+  },
+});
+loop.start();
+
+// exposed for automated smoke-testing (Playwright), not needed by a real game
+window.__demo = { player, map, camera, input, loop };
+</script>
+</body>
+</html>
