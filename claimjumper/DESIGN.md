@@ -128,29 +128,40 @@ regardless of the current wave's platform height — mirrors the old
 tiled-trestle approach's goal (fit any wave height) with one image instead
 of a repeated bay unit.
 
-**Character**: not a straight swap, because the existing system needs to
-show continuous aim angle (mouse-driven, core to the gameplay) and the new
-reference is a single static throwing pose at one angle — the old system
-handled this with discrete pre-rendered angle-bucket sprites, which this
-new art doesn't have equivalents of. Tried rotating the whole cutout
-rigidly around the planted foot point to track aim angle; at even a
-modest ~37° delta from the art's own baked-in angle it read as the
-character collapsing forward, not aiming (confirmed empirically via
-screenshots, not just reasoned about — also ruled out canvas image-smoothing
-blur as the cause before concluding it was the rotation itself). Landed on
-a **dampened rotation** (`0.2×` the real angle delta) — enough for a subtle
-lean toward the throw, verified clean at both ends of the actual 8-88°
-aim range and at the default angle, without the collapsing-forward look.
-The aim reticle already shown on screen carries the precise aim feedback;
-this is a cosmetic assist, not the primary indicator.
+**Character — superseded, see below.** The single-pose cutout described in
+the original version of this section (`player_character.png`, dampened
+whole-body rotation to approximate aim angle) has been replaced. It's kept
+here in git history only; the file itself was deleted once the real
+angle-bucket set arrived.
 
-The weapon is baked into the character art (same as the old sprite path),
-so the separate procedural spear draw in `drawPlay()` is suppressed
-whenever either sprite path is active — extended, not just reused, since
-the old suppression check only looked at `SPR.figImg` and would have
-double-drawn a spear in the (unlikely) case that loads but this new art
-doesn't. Verified idle/moving/charging/flight/recovering states all render
-with exactly one weapon visible, no console errors.
+## Player figure — six-pose angle-bucket set (real fix, not the workaround)
+
+The user followed up with `MAIN_SPRITE_WITH_SPEAR.zip`: six purpose-made,
+pre-cut (already transparent, no extraction needed) poses spanning the
+aim range — `figure_up_soft`, `figure_level`, `figure_down_soft`,
+`figure_down_mid`, `figure_down_hard`, `figure_down_steep` — a real
+equivalent to the old `SPR.figImg` aim-bucket sprite sheet, replacing the
+dampened-rotation approximation entirely.
+
+`PLAYER_FIG_SPECS` assigns each pose an angle evenly spread across the
+game's actual 8–88° range in the set's naming order (8, 24, 40, 56, 72,
+88) rather than back-measuring the art's rendered angle, which proved too
+imprecise to trust from pixel inspection alone. Each pose has its own
+`anchorX`/`anchorY` (measured per-file — the six images aren't cropped to
+a shared coordinate system, so a single shared anchor would have
+misaligned several of them) marking its planted-foot point.
+`nearestPlayerFigBucket(angle)` picks the closest pose each frame, same
+snapping idea as the old `nearestFigBucket`.
+
+The weapon is baked into each pose (same as before), so the `drawPlay()`
+spear-suppression checks now key off `PLAYER_FIG_BUCKETS.length > 0`
+instead of the old single-image check.
+
+Verified with Playwright at all six bucket angles plus an in-between
+angle (confirming snapping), and across idle/moving/charging/flight/
+recovering states: feet stay planted on the platform at every angle, pose
+progression from shallow to steep reads naturally, exactly one weapon
+visible in every state, no console errors.
 
 ## Miners' spawn pier (real reference art)
 

@@ -128,12 +128,47 @@ function waveBackdrop(){
 // Loaded independently, same graceful-fallback spirit as SKINS/WAVE_BGS: if
 // either fails to load, drawFigure/drawPlatform fall back to their existing
 // rendering rather than breaking.
-const PLAYER_ART = { tower: null, character: null, pier: null };
+const PLAYER_ART = { tower: null, pier: null };
 (function loadPlayerArt(){
   const t = new Image(); t.onload = () => { PLAYER_ART.tower = t; }; t.src = 'assets/player_tower.png';
-  const c = new Image(); c.onload = () => { PLAYER_ART.character = c; }; c.src = 'assets/player_character.png';
   const p = new Image(); p.onload = () => { PLAYER_ART.pier = p; }; p.src = 'assets/miner_pier.png';
 })();
+
+// Six purpose-made angle-bucket poses for the player figure (superseding
+// the single-pose cutout + dampened-rotation approximation this shipped
+// with initially) -- a real equivalent to the old SPR.figImg aim-bucket
+// sprite sheet, but as separate clean-cutout PNGs. anchorX/anchorY is each
+// image's own planted-foot point (measured per-file, since each was
+// individually cropped to its content and framing isn't consistent across
+// the set). angle is this bucket's position across the game's actual
+// 8-88 aim range, assigned by the set's naming order (up_soft -> shallowest,
+// down_steep -> steepest) rather than back-measuring the art's rendered
+// angle, which was too imprecise to trust at this scale.
+const PLAYER_FIG_SPECS = [
+  { file:'assets/figure_up_soft.png',   angle:8,  anchorX:195, anchorY:375 },
+  { file:'assets/figure_level.png',     angle:24, anchorX:212, anchorY:363 },
+  { file:'assets/figure_down_soft.png', angle:40, anchorX:222, anchorY:360 },
+  { file:'assets/figure_down_mid.png',  angle:56, anchorX:205, anchorY:352 },
+  { file:'assets/figure_down_hard.png', angle:72, anchorX:162, anchorY:347 },
+  { file:'assets/figure_down_steep.png',angle:88, anchorX:197, anchorY:352 },
+];
+const PLAYER_FIG_BUCKETS = [];
+(function loadPlayerFigBuckets(){
+  PLAYER_FIG_SPECS.forEach((spec, i) => {
+    const img = new Image();
+    img.onload = () => { PLAYER_FIG_BUCKETS[i] = Object.assign({ img }, spec); };
+    img.src = spec.file;
+  });
+})();
+function nearestPlayerFigBucket(angleDeg){
+  let best = null, bd = Infinity;
+  for (const b of PLAYER_FIG_BUCKETS){
+    if (!b) continue;
+    const d = Math.abs(b.angle - angleDeg);
+    if (d < bd){ bd = d; best = b; }
+  }
+  return best;
+}
 
 (function loadSprites(){
   let n=0, done=0;
@@ -1380,24 +1415,18 @@ function drawFigure(ox, oy, braced, moving, aimAngle, spState, chargeK){
   // computed foot anchor). Rather than attempt a third extraction, COCKED
   // now falls through to the same aim-bucket sprite every other state
   // (IDLE/MOVING/FLIGHT/RECOVERING) already uses without issue.
-  // Real player-figure reference art (the design this build should have
-  // started from), rotated around the planted foot point so aim angle
-  // still reads visually -- a whole-body lean toward the throw, rather
-  // than the old discrete pre-rendered angle buckets below. Checked first;
-  // falls through to the bucket sprite, then the vector body, if it never
-  // loads.
-  if (PLAYER_ART.character && spriteEligible){
-    const img = PLAYER_ART.character;
-    const footX = 85, footY = 278; // planted-foot point within the art
-    const scale = 34 / 283; // matches the old sprite's ~34px-tall convention
-    const refAngle = 11; // the art's own baked-in throw angle
-    const rot = ((aimAngle !== undefined ? aimAngle : 48) - refAngle) * D2R * 0.2;
-    ctx.save();
-    ctx.imageSmoothingEnabled = false;
-    ctx.translate(ox, oy);
-    ctx.rotate(rot);
-    ctx.drawImage(img, -footX * scale, -footY * scale, img.width * scale, img.height * scale);
-    ctx.restore();
+  // Real player-figure reference art: six purpose-made angle-bucket poses
+  // (superseding an earlier single-pose-plus-rotation approximation, which
+  // read as the character collapsing forward rather than aiming). Snaps to
+  // the nearest bucket for the current aim angle, same idea as the old
+  // SPR.figImg aim-bucket sprite below, just with dedicated art per angle
+  // instead of one photographed pose. Checked first; falls through to the
+  // old bucket sprite, then the vector body, if these never load.
+  const figBucket = nearestPlayerFigBucket(aimAngle !== undefined ? aimAngle : 48);
+  if (figBucket && spriteEligible){
+    const scale = 34 / 390; // matches the old sprite's ~34px-tall convention
+    const dw = figBucket.img.width * scale, dh = figBucket.img.height * scale;
+    ctx.drawImage(figBucket.img, ox - figBucket.anchorX * scale, oy - figBucket.anchorY * scale, dw, dh);
     return;
   }
   if (SPR.ready && SPR.figImg && spriteEligible){
@@ -2035,7 +2064,7 @@ function drawPlay(){
     // v3.0.2: checks cockedImg now, matching drawFigure's actual COCKED sprite
     // v3.0.6: checks figImg now -- the dedicated cockedImg sprite is gone,
     // COCKED uses the same aim-bucket sprite as every other state.
-    const usedSpriteCocked = !braced && (PLAYER_ART.character || (SPR.ready && SPR.figImg));
+    const usedSpriteCocked = !braced && (PLAYER_FIG_BUCKETS.length > 0 || (SPR.ready && SPR.figImg));
     if (!usedSpriteCocked){
       const back = clamp(sp.charge,0,1);
       drawSpear(ox+2, oy-9, ox-8-back*8, oy-17-back*6, 5, buffA, buffB);
@@ -2044,7 +2073,7 @@ function drawPlay(){
     // v3.0: the sprite figure (drawFigure's IDLE branch, same gating condition)
     // already bakes a spear into the pose art, so skip the procedural one here
     // to avoid drawing two overlapping spears. See drawFigure() for the match.
-    const usedSprite = !braced && sp.state==='IDLE' && (PLAYER_ART.character || (SPR.ready && SPR.figImg));
+    const usedSprite = !braced && sp.state==='IDLE' && (PLAYER_FIG_BUCKETS.length > 0 || (SPR.ready && SPR.figImg));
     if (!usedSprite){
       const a = sp.angle*D2R;
       drawSpear(ox+2, oy-8, ox+2+Math.cos(a)*22, oy-8+Math.sin(a)*22, 5, buffA, buffB);
