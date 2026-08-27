@@ -152,6 +152,21 @@ double-drawn a spear in the (unlikely) case that loads but this new art
 doesn't. Verified idle/moving/charging/flight/recovering states all render
 with exactly one weapon visible, no console errors.
 
+## Miners' spawn pier (real reference art)
+
+The user also supplied a small reference image of the miners' pier — a
+wooden post-and-plank they stand on/spawn from. Extracted the same way as
+the player/tower art (local flood-fill, connected-component cleanup) into
+`claimjumper/assets/miner_pier.png`, and wired into `drawMinerPier()` ahead
+of the old procedural plank-and-legs, same graceful-fallback pattern.
+
+This one's a straight swap with no angle/animation complications — the
+pier is purely decorative (per the file's own existing comment, "drawn
+every frame regardless of whether a miner is present"), so it's just
+anchored at the plank's near top corner and centered on the same x the old
+procedural pier occupied. Verified with a real miner standing on it: feet
+land cleanly on the plank, no positioning mismatch, no console errors.
+
 ## Remaining assets
 
 `claimjumper-images/qr.png` (the end-panel QR code) is in place — decodes

@@ -128,10 +128,11 @@ function waveBackdrop(){
 // Loaded independently, same graceful-fallback spirit as SKINS/WAVE_BGS: if
 // either fails to load, drawFigure/drawPlatform fall back to their existing
 // rendering rather than breaking.
-const PLAYER_ART = { tower: null, character: null };
+const PLAYER_ART = { tower: null, character: null, pier: null };
 (function loadPlayerArt(){
   const t = new Image(); t.onload = () => { PLAYER_ART.tower = t; }; t.src = 'assets/player_tower.png';
   const c = new Image(); c.onload = () => { PLAYER_ART.character = c; }; c.src = 'assets/player_character.png';
+  const p = new Image(); p.onload = () => { PLAYER_ART.pier = p; }; p.src = 'assets/miner_pier.png';
 })();
 
 (function loadSprites(){
@@ -1257,6 +1258,18 @@ function drawBank(l, top, w, h){
 // 352-372 -- see spawnMiner/spawnVinegarMiner). Reworking the miner
 // sprite itself is out of scope here (GDD §4.4).
 function drawMinerPier(){
+  // Real reference art for the miners' spawn pier, replacing the earlier
+  // procedural plank-and-legs. Anchored at the plank's near top corner
+  // (where a miner would stand), centered on the same x the old procedural
+  // pier occupied.
+  if (PLAYER_ART.pier){
+    const img = PLAYER_ART.pier;
+    const anchorX = 61, anchorY = 23;
+    const scale = 0.30;
+    const cx = 370;
+    ctx.drawImage(img, cx - anchorX * scale, WATER_Y - anchorY * scale, img.width * scale, img.height * scale);
+    return;
+  }
   const l = 338, r = 402, y = WATER_Y;
   ctx.fillStyle = PAL.wood;
   ctx.fillRect(l, y, r-l, 3);
