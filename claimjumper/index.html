@@ -58,6 +58,16 @@ const LW = 400, LH = 240;
 const W = cv.width, H = cv.height; // 960 x 576
 
 const WATER_Y = 110, BOT_Y = 210, OBS_X = 70, POOL_L = 114, BANK_X = 350;
+// v7.2: the fishing tower's platform height used to vary per wave (via
+// each WAVES[] entry's own h, 55-95) as a difficulty knob. Fixed at one
+// constant height across every wave per direction -- h wasn't tied to
+// anything else (checked: only ever read for this and the wave-intro's
+// "PLATFORM: X FEET" text, no fish/miner/pool logic depends on it), so
+// this is a pure visual-consistency change. Also incidentally fixes the
+// framing bug where the tallest waves' platform sat close enough to the
+// top of the canvas that the player figure rendered partly off-screen --
+// TOWER_H=55 is wave 1's original value, the most-tested case.
+const TOWER_H = 55;
 
 // ---- v3.0: Firefly sprite assets (fish + figure aim-bucket poses) ----
 // See CLAIMJUMPER_v3_GDD.md sec 2/6. Ping-pong fish playback, discrete
@@ -426,14 +436,16 @@ const SPECIES_ORDER = ['redband','bull','chinook','steelhead'];
 // in WAVE_BG_FILES below -- each wave's backdrop is now a genuinely
 // distinct point in time rather than a cycling art set. The former 6th
 // wave (THE LAST RUN) had no matching date/background of its own and was
-// cut; its difficulty (h/jitter/minerFirst/gap) was folded into the new
+// cut; its difficulty (jitter/minerFirst/gap) was folded into the new
 // final wave rather than dropped, so the game doesn't get easier overall.
+// v7.2: dropped each wave's own platform height (h) -- see TOWER_H above,
+// now a single fixed height across every wave per direction.
 const WAVES = [
-  { name:'15,000 YEARS AGO', h:55, jitter:0, poolR:336, target:10, w:{redband:.60,bull:.28,chinook:.12,steelhead:0},    minerFirst:45, gap:[26,32] },
-  { name:'1066 A.D.',        h:65, jitter:0, poolR:336, target:12, w:{redband:.55,bull:.25,chinook:.15,steelhead:.05},  minerFirst:32, gap:[22,28] },
-  { name:'1492 A.D.',        h:72, jitter:2, poolR:336, target:12, w:{redband:.56,bull:.26,chinook:.13,steelhead:.05},  minerFirst:28, gap:[20,26] },
-  { name:'1776 A.D.',        h:80, jitter:3, poolR:336, target:12, w:{redband:.60,bull:.26,chinook:.10,steelhead:.04},  minerFirst:24, gap:[18,24] },
-  { name:'1863 A.D.',        h:95, jitter:3, poolR:262, target:9,  w:{redband:.60,bull:.33,chinook:.05,steelhead:.02},  minerFirst:20, gap:[16,20] },
+  { name:'15,000 YEARS AGO', jitter:0, poolR:336, target:10, w:{redband:.60,bull:.28,chinook:.12,steelhead:0},    minerFirst:45, gap:[26,32] },
+  { name:'1066 A.D.',        jitter:0, poolR:336, target:12, w:{redband:.55,bull:.25,chinook:.15,steelhead:.05},  minerFirst:32, gap:[22,28] },
+  { name:'1492 A.D.',        jitter:2, poolR:336, target:12, w:{redband:.56,bull:.26,chinook:.13,steelhead:.05},  minerFirst:28, gap:[20,26] },
+  { name:'1776 A.D.',        jitter:3, poolR:336, target:12, w:{redband:.60,bull:.26,chinook:.10,steelhead:.04},  minerFirst:24, gap:[18,24] },
+  { name:'1863 A.D.',        jitter:3, poolR:262, target:9,  w:{redband:.60,bull:.33,chinook:.05,steelhead:.02},  minerFirst:20, gap:[16,20] },
 ];
 
 // --- v2: the progressive spear — buff catalogue (GDD §4) ---
@@ -528,7 +540,7 @@ function scheduleVinegar(){
 
 function startWave(){
   G.w = WAVES[G.wave-1];
-  G.obsY = WATER_Y - G.w.h;
+  G.obsY = WATER_Y - TOWER_H;
   G.condition = 4;
   G.fish=[]; G.miners=[]; G.rocks=[]; G.drops=[]; G.taken=[];
   G.sp = newSpear();
@@ -2318,7 +2330,7 @@ function drawWaveIntro(){
   else drawSky();
   boldCText('WAVE '+G.wave, 70, 26);
   ctext(G.w.name, 94, {font:'14px Georgia', color:'#4a3018'});
-  ctext('PLATFORM: '+Math.floor(G.w.h/5)+' FEET', 114, {font:'12px Georgia', color:'#6b5030'});
+  ctext('PLATFORM: '+Math.floor(TOWER_H/5)+' FEET', 114, {font:'12px Georgia', color:'#6b5030'});
   if (G.wave===G.vinegarWave && !G.vinegarSpawned){
     ctext('SOME OF THEM CAME UP FROM VINEGAR HILL.', 130, {font:'11px Georgia', color:'#6b3018'});
   }

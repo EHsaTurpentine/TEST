@@ -532,3 +532,22 @@ used), not a regression. Flagged for a future pass rather than fixed
 here, since it's out of scope for an art-consistency request and would
 need its own investigation (cap wave height, shift the camera, or resize
 the canvas).
+
+## v7.2 fixed platform height
+
+User asked to stop varying the tower's platform height per wave and
+keep it constant. Checked what `WAVES[].h` actually drove before
+touching it: only `G.obsY` (`startWave()`) and the wave-intro's
+"PLATFORM: X FEET" text -- no fish/miner/pool/difficulty logic reads it,
+so this is a pure visual change, not a difficulty-curve change. Added
+`const TOWER_H = 55` (wave 1's original, most-tested value) and pointed
+both read sites at it instead of `G.w.h`; removed the now-dead `h:`
+field from each `WAVES[]` entry.
+
+This also fixes the wave-5 framing bug flagged in the section above
+(the player figure rendering off the top of the canvas at the tallest
+platform height) as a side effect, without needing separate work --
+`obsY` no longer gets close to the canvas edge at any wave. Verified via
+Playwright: `G.obsY` is identical (55) after `startWave()` at every wave
+1-5, and waves 1/3/5 screenshot at the same platform height with no
+console errors.
