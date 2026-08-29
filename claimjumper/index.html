@@ -553,7 +553,10 @@ function startWave(){
   G.towerRot = rnd(-6, 6) * D2R;
   G.pierCx = 370 + rnd(-15, 15);
   G.pierRot = rnd(-8, 8) * D2R;
-  if (G.wave===6) G.vinegarSecondPlanned = Math.random()<0.15; // GDD §7.1 optional stretch
+  // v7.1: was G.wave===6 -- dead since the wave count was cut from 6 to 5
+  // (see WAVES above), silently disabling this GDD §7.1 stretch feature.
+  // WAVES.length tracks whichever wave is actually final now.
+  if (G.wave===WAVES.length) G.vinegarSecondPlanned = Math.random()<0.15;
   G.mode='WAVEINTRO'; G.t=0;
 }
 function startRun(){
@@ -913,10 +916,18 @@ function spawnMiner(){
   // v7 §4: the 'jumper' (rival-angler) miner is explicitly out of scope
   // for the skin system -- only 'rock' miners get a skin.
   const kind = (rocks>=2) ? 'jumper' : (Math.random()<0.6 ? 'rock' : 'jumper');
-  const tx = (kind==='rock') ? rnd(356,392) : rnd(352,372);
+  // v7.1: these ranges used to be fixed absolute x (356-392 / 352-372),
+  // tuned around the pier's old fixed x~370. Once startWave() started
+  // rolling a random G.pierCx per wave (+-15px), the miner's spawn/stand
+  // point stopped tracking the pier's actual position -- the miner would
+  // walk to a fixed spot near the OLD pier location regardless of where
+  // that wave's pier actually rendered, reading as floating off the
+  // structure on any wave whose roll moved the pier. Now relative to
+  // G.pierCx, same spread as before.
+  const tx = G.pierCx + ((kind==='rock') ? rnd(-14,22) : rnd(-18,2));
   const pool = rockSkinPool();
   const skin = (kind==='rock') ? pool[irnd(0,pool.length-1)] : null;
-  G.miners.push({ type:kind, x:404, tx, state:'walk', t:0, arm:0, skin });
+  G.miners.push({ type:kind, x:G.pierCx+34, tx, state:'walk', t:0, arm:0, skin });
 }
 // --- v2: the vinegar miner (GDD §7) ---
 function maybeSpawnVinegar(){
@@ -924,7 +935,7 @@ function maybeSpawnVinegar(){
     G.vinegarSpawned = true;
     return true;
   }
-  if (G.wave===6 && G.vinegarSpawned && G.vinegarSecondPlanned && !G.vinegarSecondUsed){
+  if (G.wave===WAVES.length && G.vinegarSpawned && G.vinegarSecondPlanned && !G.vinegarSecondUsed){
     G.vinegarSecondUsed = true;
     return true;
   }
@@ -933,7 +944,8 @@ function maybeSpawnVinegar(){
 function spawnVinegarMiner(){
   if (G.miners.length >= 4) return;
   // v7 §1.1: Miner/Soldier is the sole skin on the vinegar-spawn behavior.
-  G.miners.push({ type:'vinegar', x:404, tx: rnd(352,372), state:'walk', t:0, arm:0, skin:'soldier' });
+  // v7.1: tx/x relative to G.pierCx, same reasoning as spawnMiner() above.
+  G.miners.push({ type:'vinegar', x:G.pierCx+34, tx: G.pierCx+rnd(-18,2), state:'walk', t:0, arm:0, skin:'soldier' });
   G.banner = {text:'SOMETHING IN HIS HAND CATCHES THE LIGHT', t:45};
   sfxVinegarSpawn();
 }
@@ -1001,7 +1013,10 @@ function updateMiners(){
   }
   for (const m of G.miners){
     if (m.state==='gone'){
-      m.t -= 1; if (m.t<=0){ m.state='walk'; m.x=404; }
+      // v7.1: was the fixed x=404 -- same G.pierCx-tracking fix as the
+      // initial spawn in spawnMiner()/spawnVinegarMiner(), for a miner
+      // re-entering after retreating offscreen.
+      m.t -= 1; if (m.t<=0){ m.state='walk'; m.x=G.pierCx+34; }
     } else if (m.state==='walk'){
       m.x -= (m.type==='vinegar') ? 0.6 : 0.9; // vinegar miner approaches slower (GDD §6.3)
       if (m.x <= m.tx){
@@ -1330,8 +1345,8 @@ function drawBank(l, top, w, h){
 // reusable pier asset. Falling back to approach (b) instead: a flat
 // procedural platform in the same vector-plank language drawPlatform's
 // own fallback already uses (same PAL.wood/woodDk palette), sized to
-// the miner spawn/stand x-range (rock tx: 356-392, jumper/vinegar tx:
-// 352-372 -- see spawnMiner/spawnVinegarMiner). Reworking the miner
+// the miner spawn/stand x-range (rock tx: G.pierCx-14..+22, jumper/vinegar
+// tx: G.pierCx-18..+2 -- see spawnMiner/spawnVinegarMiner). Reworking the miner
 // sprite itself is out of scope here (GDD §4.4).
 function drawMinerPier(){
   // Real reference art for the miners' spawn pier, replacing the earlier
@@ -1340,7 +1355,15 @@ function drawMinerPier(){
   // pier occupied.
   if (PLAYER_ART.pier){
     const img = PLAYER_ART.pier;
-    const anchorX = 61, anchorY = 23;
+    // v7.1: anchorY was 23 (near the TOP of the post, above the plank
+    // entirely), not the plank's actual standing surface -- this needs to
+    // land at WATER_Y to match where drawMinerSkin()/drawMinerSprite()
+    // plant a miner's feet. Re-measured empirically via Playwright
+    // (iterating against a live-spawned miner, not just reading the PNG's
+    // alpha channel -- the silhouette's topmost edge turned out to be the
+    // plank's far/back edge, not the near corner a miner actually stands
+    // at). anchorY=68 lands the miner's feet flush on the plank surface.
+    const anchorX = 61, anchorY = 68;
     const scale = 0.30;
     // G.pierCx/pierRot: a small per-wave position+tilt roll (see
     // startWave()), same idea as the tower's. Rotated around the plank's
@@ -1792,8 +1815,8 @@ function drawFishShape(x, y, key, dir, sc, alpha, animate){
 // v3.0: sprite-backed miner body (WHITE_GUY.MP4 pier-walk footage -- a real
 // walk cycle for enemies, distinct on purpose from the player figure, which
 // slides in a fixed position by design, not by missing asset. See drawFigure().
-// Faces LEFT in-game (miners walk from x=404 toward the platform on the
-// left); source footage faces right, so this mirrors it. No windup/throw
+// Faces LEFT in-game (miners walk in from off-screen right, toward the
+// pier on the left); source footage faces right, so this mirrors it. No windup/throw
 // motion exists in the source, so the small procedural arm+rock/rod gesture
 // stays layered on top of the sprite body for 'wind' and 'jumper' -- same
 // reasoning as the player figure's COCKED-arm cut, just not literally

@@ -321,3 +321,69 @@ change):
 Verified via Playwright: all 5 wave-intro cards show the correct
 year/name in order, and the final-wave tally screen no longer mentions
 "THE LAST RUN".
+
+## v7.1 enemy pier cleanup
+
+User feedback: "the enemy platform/fishing ladder... looks bad in
+comparison to the main sprite." Three real, distinct problems, not one:
+
+**Leftover background-removal artifacts.** `miner_pier.png`'s original
+extraction (from a small, low-detail reference photo -- nowhere near the
+tower reference's production value) left three thin strips of the
+source's sky-blue background still opaque: two 1-2px horizontal streaks
+sticking out to the left at the plank/post joint, and an isolated 1px
+line further down. Confirmed by color (uniform sky-blue, not wood) and
+by connectivity (no gradient into the wood -- a flood-fill boundary
+artifact, not intentional shading). Cleared by zeroing alpha along each
+streak from the image edge inward, stopping at the wood outline, rather
+than a blanket color-key (the legitimate base splash uses similar blues,
+so a global mask would have eaten it too).
+
+**Miner floating above the plank -- wrong anchor point.** `anchorX/
+anchorY` (the point in `miner_pier.png` that lands at `WATER_Y`, matching
+where `drawMinerSkin()`/`drawMinerSprite()` plant a miner's feet) was
+`(61, 23)` -- 23 is near the TOP of the post, nowhere near the plank at
+all. Re-measured empirically against a live-spawned miner (not just read
+off the PNG's alpha channel, which pointed at the plank's far/back edge,
+not the near corner a character actually stands on) -- `anchorY=68` lands
+the feet flush on the plank surface. Verified across multiple `rock`-type
+skins (targetH differs per skin but the render is always bottom-anchored
+at `WATER_Y`, so all align identically) and multiple random per-wave
+`pierRot` tilts.
+
+**Miner spawning at the pier's OLD fixed position -- a real regression
+from the per-wave pier randomization added earlier.** `spawnMiner()`/
+`spawnVinegarMiner()`'s `tx` (stand point) and initial `x` (walk-in start)
+were fixed absolute values (`rnd(356,392)`, `x:404`, etc.), tuned around
+the pier's old constant x≈370. Once `startWave()` started rolling a
+random `G.pierCx` per wave, nothing carried that roll to the miners --
+they'd walk to the OLD fixed spot regardless of where that wave's pier
+actually rendered, reading as standing on nothing on any wave whose roll
+moved the pier away from ~370. Same bug also lived in `updateMiners()`'s
+`state==='gone'` re-entry (`m.x=404` again) and in `maybeSpawnVinegar()`/
+`startWave()`'s `G.wave===6` checks, both dead since the 5-wave cut above
+(silently disabled the GDD §7.1 second-vinegar-miner stretch feature) --
+switched to `G.wave===WAVES.length`. All four spots now compute relative
+to `G.pierCx`, with the same spread as before, so a miner always tracks
+wherever that wave's pier actually rolled.
+
+**What wasn't changed, and why.** Considered rebuilding the plank+post
+crop entirely from a fresh crop of `player_tower.png` (to close the
+remaining production-value gap with the tower/legs, which already reuse
+that source) rather than just cleaning up the existing crop. Every
+candidate region tried (both the left and right corner posts) had its own
+uncleaned background residue outside the area the original tower
+extraction actually needed for gameplay -- background removal there would
+be a real re-do of that original extraction pass, not a quick reuse, and
+tangled with a rope-net pattern that a naive flood-fill damages (tolerant
+enough to clear the residual sky pulls blue-shaded net cells with it too).
+Deferred rather than rushed; the cleanup above fixes the concrete defects
+(artifacts, floating miner, wrong-position miner) without that larger
+asset-extraction risk. A `jumper`-type miner (the rival-angler, which
+never gets a skin -- see `spawnMiner()`'s own comment) still floats above
+the pier in the same way the skinned miners used to: it renders through a
+completely separate legacy sprite-atlas path (`drawMinerSprite`,
+`SPR_MINER_DATA.minerAtlas.feetCentre`) that predates this session and
+wasn't touched here -- flagged, not fixed, since it's a pre-existing
+miner-sprite calibration issue rather than anything about the pier
+itself.
