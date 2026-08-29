@@ -127,15 +127,10 @@ function waveBackdrop(){
 // Loaded independently, same graceful-fallback spirit as SKINS/WAVE_BGS: if
 // either fails to load, drawFigure/drawPlatform fall back to their existing
 // rendering rather than breaking.
-const PLAYER_ART = { tower: null, pier: null, pierLegs: null };
+const PLAYER_ART = { tower: null, pier: null };
 (function loadPlayerArt(){
   const t = new Image(); t.onload = () => { PLAYER_ART.tower = t; }; t.src = 'assets/player_tower.png';
   const p = new Image(); p.onload = () => { PLAYER_ART.pier = p; }; p.src = 'assets/miner_pier.png';
-  // The pier reference photo only showed a bare post -- cropped from the
-  // SAME tower art (a net-braced leg section) to give it real structural
-  // weight instead of reading as a thin stick, per direction ("get it
-  // looking more like the fishing tower").
-  const pl = new Image(); pl.onload = () => { PLAYER_ART.pierLegs = pl; }; pl.src = 'assets/miner_pier_legs.png';
 })();
 
 // Six purpose-made angle-bucket poses for the player figure (superseding
@@ -1372,20 +1367,12 @@ function drawMinerPier(){
     ctx.translate(G.pierCx, WATER_Y);
     ctx.rotate(G.pierRot);
     const postLocalX = -anchorX * scale, postLocalY = -anchorY * scale;
-    if (PLAYER_ART.pierLegs){
-      // Reused net-braced leg section from the tower art, continuing the
-      // front post down toward the water so the pier reads as a real
-      // structure instead of a bare stick -- neither pier reference photo
-      // (old or new) showed netted bracing of its own.
-      const legs = PLAYER_ART.pierLegs;
-      const legsScale = 0.28;
-      const legsAnchorX = 90, legsAnchorY = 0;
-      const postBottomX = 90, postBottomY = 233; // where the front post exits this crop
-      const attachX = postLocalX + postBottomX * scale;
-      const attachY = postLocalY + postBottomY * scale;
-      ctx.drawImage(legs, attachX - legsAnchorX * legsScale, attachY - legsAnchorY * legsScale,
-        legs.width * legsScale, legs.height * legsScale);
-    }
+    // v7.2: dropped the reused net-braced tower-leg section that used to
+    // continue the post down toward the water. It was cropped from the
+    // OLD player tower art being retired this pass, and reading as a
+    // second, smaller "fishing tower" sitting on the enemy side of the
+    // screen was exactly the visual confusion flagged -- the player's
+    // tower should be the only tower-style structure on screen.
     ctx.drawImage(img, postLocalX, postLocalY, img.width * scale, img.height * scale);
     ctx.restore();
     return;
@@ -1401,15 +1388,18 @@ function drawMinerPier(){
   }
 }
 function drawPlatform(oy){
-  // Real fishing-tower reference art (the design predates this build and
-  // should have been the basis from the start), stretched vertically only
-  // so its foot-anchor point lands at `oy` and its base reaches down near
-  // the water regardless of the current wave's platform height -- same
-  // "stack/stretch to fit" idea as the old trestle tiling below, just with
-  // one full image instead of a repeated bay unit.
+  // v7.2: replaced the original concept-art tower (photoreal-ish
+  // rendering, snow/mountain scene baked into parts of it, and a known
+  // ghost-feet crop artifact) with the Firefly-generated tower from the
+  // same batch as the skins/pier art, for one consistent art style
+  // throughout. Stretched vertically only so its foot-anchor point lands
+  // at `oy` and its base reaches down near the water regardless of the
+  // current wave's platform height -- same "stack/stretch to fit" idea
+  // as the old trestle tiling below, just with one full image instead of
+  // a repeated bay unit.
   if (PLAYER_ART.tower){
     const img = PLAYER_ART.tower;
-    const anchorX = 289, anchorY = 280; // player's foot point within the art
+    const anchorX = 220, anchorY = 142; // player's foot point within the art (deck surface)
     const targetBottom = 226; // where the submerged base/splash should land
     const scale = (targetBottom - oy) / (img.height - anchorY);
     const dw = img.width * scale, dh = img.height * scale;

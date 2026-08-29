@@ -472,3 +472,63 @@ Verified via Playwright: all four skins standing on the new pier with no
 float gap, two miners with different skins on screen simultaneously
 (spread across the real `spawnMiner()` tx range) both land correctly on
 the plank, title screen and wave-intro unaffected, no console errors.
+
+## v7.2 follow-up: player tower, pier "second tower", rockthrower facing
+
+User feedback after playing the art-refresh live: the player's own
+tower was still the OLD concept-art image (visible snow/mountain
+ghosting and the earlier ghost-feet crop notch), the enemy pier's
+reused tower-netting-legs read as a confusing second "fishing tower" on
+the right side of the screen, and rockthrower was throwing away from
+the player instead of at them.
+
+**Player tower swapped to the Firefly mini-tower** (the structures-only
+piece extracted alongside the pier plank, previously unused). Same
+"stretch to fit the wave's platform height" mechanism in `drawPlatform()`
+as before, just re-anchored: `anchorX=220, anchorY=142` (the new art's
+deck surface, measured the same empirical way as the pier fixes).
+Verified against a live-spawned player figure at wave 1 and wave 5 (the
+two height extremes) -- feet land flush on the deck at both.
+
+**Dropped the reused tower-leg crop under the enemy pier entirely**
+(`miner_pier_legs.png`, deleted). It was cropped from the OLD tower art
+now being retired, and its whole visual point (bulk up the plank so it
+"looks more like the fishing tower," from much earlier feedback) is
+exactly what read as wrong once there's a real, better-quality tower
+back on the player's side -- two tower-style structures on screen reads
+as two towers, not one tower plus a dock. The plank alone carries the
+new art's own weight fine without it.
+
+**Rockthrower was throwing right; miners must face left** (toward the
+player, who's always on the tower at the left). Checked all four skins
+individually against the source art: archer, prospector, and soldier
+all already aimed/reached left, only rockthrower was mirrored wrong.
+Fixed by flipping `rockthrower.png` itself horizontally (`PIL`
+`FLIP_LEFT_RIGHT`) rather than adding per-skin mirroring logic to
+`drawMinerSkin()` -- simpler, and consistent with how every other skin
+is just drawn as-is with no code-level flip.
+
+**Also caught and fixed a real transparency-conversion defect while
+re-examining the new tower art closely**: the net's mesh holes had a
+faint white haze instead of showing clean through-transparency (visible
+zoomed in, easy to miss at normal scale) -- the checkerboard classifier's
+brightness floor (`min(r,g,b) >= 220`) was too strict for pixels near a
+soft shadow/gradient inside small enclosed net cells, leaving them
+narrowly misclassified as real content. Loosened to `tol<=12, min>=190`
+and reprocessed just the structures image (the only one with fine mesh
+detail at that scale); re-checked the character skins against the same
+issue and found them unaffected (their large solid-color regions don't
+have the same boundary-precision problem). Re-verified with a bright
+non-white checker composite (pink/cyan, not the misleading white the
+Read tool defaults to) before and after.
+
+**Found, not fixed**: at wave 5 (the tallest platform, `obsY=15`,
+close to the very top of the canvas), the player figure renders mostly
+or entirely above the visible canvas top edge. Confirmed via git history
+that this happens identically with the OLD tower art too -- it's a
+pre-existing framing issue unrelated to today's art swap (the player
+figure's position is computed independently of which tower image is
+used), not a regression. Flagged for a future pass rather than fixed
+here, since it's out of scope for an art-consistency request and would
+need its own investigation (cap wave height, shift the camera, or resize
+the canvas).
