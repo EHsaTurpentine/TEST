@@ -282,3 +282,42 @@ was removed. Verified via Playwright against the real `WAVES` table
 entries for wave 5 and wave 6 (not synthetic overrides), plus a wave 1
 re-check to confirm no regression from dropping the always-on bottom
 strip.
+
+## v7.1 wave rename — real historical checkpoints
+
+Renamed the five waves to real years, matched 1:1 to the five backgrounds:
+`15,000 YEARS AGO`, `1066 A.D.`, `1492 A.D.`, `1776 A.D.`, `1863 A.D.`. This
+sets up v7's plan (new Firefly backgrounds depicting the *same* river
+valley at each of these points, showing environmental impact accumulating
+over time) — the player should recognize it's one place across a long
+span, not five unrelated locations.
+
+**Cut from 6 waves to 5, folding the cut wave's difficulty into the
+final one.** The game previously had 6 waves but only 5 backgrounds, so
+wave 6 quietly looped back to wave 1's art — fine when backgrounds were
+decorative, but incompatible with a real forward-moving timeline (going
+from 1863 back to 15,000 years ago on wave 6 makes no sense). The user
+had 5 real dates, one per background, so wave 6 (`THE LAST RUN`) was cut
+outright rather than inventing a 6th date. Its difficulty wasn't just
+dropped: the new final wave (1863) keeps 1863's own `poolR:262` (the
+"channel diverted by mining" narrowing — thematically the right visual
+for the last, most industrialized wave anyway) but takes wave 6's harder
+`h`/`jitter`/`minerFirst`/`gap` values and a species-weight blend of the
+two, so the endgame doesn't get easier just because a wave disappeared.
+
+Three other spots referenced the old 6-wave assumption directly and
+needed updating alongside the `WAVES` array itself (most of the
+wave-scaling code already read `WAVES.length` dynamically and needed no
+change):
+- `scheduleVinegar()`'s candidate wave list (`[3,4,5,6]` → `[3,4,5]`) and
+  fallback clamp.
+- The final-wave tally message, which hardcoded the old wave name
+  ("ENTER — THE LAST RUN IS DONE") — now name-agnostic ("...THE FINAL RUN
+  IS DONE") so it doesn't reference a wave name that no longer exists.
+- A comment documenting the miss-chance curve's endpoint, which named
+  "wave 6" explicitly even though the code itself already scaled off
+  `WAVES.length`.
+
+Verified via Playwright: all 5 wave-intro cards show the correct
+year/name in order, and the final-wave tally screen no longer mentions
+"THE LAST RUN".

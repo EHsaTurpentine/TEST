@@ -103,13 +103,12 @@ const SKINS = { ready:false, rockthrower:null, archer:null, prospector:null, sol
   }
 })();
 
-// The five level-background stills, used as the WAVE INTRO card's backdrop
-// (one per wave, cycling), *not* the live PLAY scene: PLAY's water/bank/
-// platform/miners are laid out against drawSky()'s single scene image at
-// exact pixel coordinates (WATER_Y, BANK_X, etc.), so swapping that would
-// misalign everything currently drawn on top of it. WAVEINTRO is just
-// centered text over a full-bleed backdrop, so it's a safe place to show
-// this art without touching drawSky() or PLAY at all.
+// The five level-background stills -- both the WAVEINTRO card's backdrop
+// and the live PLAY scene itself (see drawSky()). One per wave, in wave
+// order: index i is WAVES[i]'s backdrop. v7.1 cut WAVES down to exactly
+// five entries so this is a fixed 1:1 mapping, not a cycling pool -- each
+// wave is meant to be a genuinely distinct point in this river valley's
+// history (see WAVES' names/comment above), not a repeating art set.
 const WAVE_BG_FILES = ['assets/bg_mountainvista.png','assets/bg_rockycliff.png','assets/bg_esmeralda.png','assets/bg_pinegrove.png','assets/bg_junctionbar.png'];
 const WAVE_BGS = [];
 (function loadWaveBackgrounds(){
@@ -427,14 +426,19 @@ const SPECIES = {
 };
 const SPECIES_ORDER = ['redband','bull','chinook','steelhead'];
 
-// waves (ported 1:1 from WAVES in main.lua)
+// v7.1: five waves now, one per real historical checkpoint in this river
+// valley (15,000 years ago -> 1863), matched 1:1 to the five backgrounds
+// in WAVE_BG_FILES below -- each wave's backdrop is now a genuinely
+// distinct point in time rather than a cycling art set. The former 6th
+// wave (THE LAST RUN) had no matching date/background of its own and was
+// cut; its difficulty (h/jitter/minerFirst/gap) was folded into the new
+// final wave rather than dropped, so the game doesn't get easier overall.
 const WAVES = [
-  { name:'EARLY SEASON',         h:55, jitter:0, poolR:336, target:10, w:{redband:.60,bull:.28,chinook:.12,steelhead:0},    minerFirst:45, gap:[26,32] },
-  { name:'FULL RUN',             h:65, jitter:0, poolR:336, target:12, w:{redband:.55,bull:.25,chinook:.15,steelhead:.05},  minerFirst:32, gap:[22,28] },
-  { name:'PLACER CAMP UPSTREAM', h:72, jitter:2, poolR:336, target:12, w:{redband:.56,bull:.26,chinook:.13,steelhead:.05},  minerFirst:28, gap:[20,26] },
-  { name:'HYDRAULIC SEASON',     h:80, jitter:3, poolR:336, target:12, w:{redband:.60,bull:.26,chinook:.10,steelhead:.04},  minerFirst:24, gap:[18,24] },
-  { name:'CHANNEL DIVERTED',     h:90, jitter:3, poolR:262, target:9,  w:{redband:.60,bull:.28,chinook:.09,steelhead:.03},  minerFirst:22, gap:[17,22] },
-  { name:'THE LAST RUN',         h:95, jitter:3, poolR:300, target:8,  w:{redband:.62,bull:.38,chinook:0,steelhead:0},      minerFirst:20, gap:[16,20] },
+  { name:'15,000 YEARS AGO', h:55, jitter:0, poolR:336, target:10, w:{redband:.60,bull:.28,chinook:.12,steelhead:0},    minerFirst:45, gap:[26,32] },
+  { name:'1066 A.D.',        h:65, jitter:0, poolR:336, target:12, w:{redband:.55,bull:.25,chinook:.15,steelhead:.05},  minerFirst:32, gap:[22,28] },
+  { name:'1492 A.D.',        h:72, jitter:2, poolR:336, target:12, w:{redband:.56,bull:.26,chinook:.13,steelhead:.05},  minerFirst:28, gap:[20,26] },
+  { name:'1776 A.D.',        h:80, jitter:3, poolR:336, target:12, w:{redband:.60,bull:.26,chinook:.10,steelhead:.04},  minerFirst:24, gap:[18,24] },
+  { name:'1863 A.D.',        h:95, jitter:3, poolR:262, target:9,  w:{redband:.60,bull:.33,chinook:.05,steelhead:.02},  minerFirst:20, gap:[16,20] },
 ];
 
 // --- v2: the progressive spear — buff catalogue (GDD §4) ---
@@ -522,8 +526,8 @@ function enterTally(){ G.mode='TALLY'; G.t=0; buildTallyPages(); }
 
 // --- v2: vinegar-wave scheduling (GDD §7.1) ---
 function scheduleVinegar(){
-  const opts = [3,4,5,6].filter(w=>w>=G.wave);
-  G.vinegarWave = opts.length ? opts[irnd(0,opts.length-1)] : clamp(G.wave,3,6);
+  const opts = [3,4,5].filter(w=>w>=G.wave);
+  G.vinegarWave = opts.length ? opts[irnd(0,opts.length-1)] : clamp(G.wave,3,5);
   G.vinegarSpawned = false;
 }
 
@@ -946,7 +950,7 @@ function computeTargetX(){
 // above. Scatter alone rarely produced a real miss: it's only 4-10px of
 // jitter against a ~26px-wide hitbox, so a stationary player was hit almost
 // every time regardless. This rolls a flat per-throw chance (eases from
-// 26% on wave 1 to 12% on wave 6, same difficulty direction as the existing
+// 26% on wave 1 to 12% on the final wave, same difficulty direction as the existing
 // scatter/lead curves) and, when it triggers, sends the throw well clear of
 // the platform's dodge range entirely -- a genuine "he missed" moment, not
 // just a smaller random wobble.
@@ -2350,7 +2354,7 @@ function drawTally(){
     // direction. Just a plain closing line now, no number attached.
     boldCText('WAVE CLEAR', 100, 24);
     if (G.t>20){
-      if (G.wave>=WAVES.length) ctext('ENTER \u2014 THE LAST RUN IS DONE', 150, {font:'bold 13px Georgia'});
+      if (G.wave>=WAVES.length) ctext('ENTER \u2014 THE FINAL RUN IS DONE', 150, {font:'bold 13px Georgia'});
       else ctext('ENTER \u2014 NEXT WAVE', 150, {font:'bold 13px Georgia'});
     }
   }
