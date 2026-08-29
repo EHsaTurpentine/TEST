@@ -84,10 +84,13 @@ Canvas-heavy bugs (transparency, alignment, rotation artifacts) are frequently i
 - For alpha/transparency work on a PNG, composite it over a checkerboard and inspect that, or sample pixel alpha directly — don't trust a plain image preview.
 - Any temporary debug hook added for diagnosis (e.g. `window.__gameDebug`) gets removed before the final commit.
 
-### 2.6 Deploy pipeline
+### 2.6 AI image generators export fake transparency
+A "transparent background" PNG from an AI image generator (tested against Firefly) can come back as flat RGB with a literal picture of a checkerboard baked into the pixels, not a real alpha channel — `Image.open(f).mode` reports `'RGB'`, not `'RGBA'`. Don't trust the filename or the tool's claim; check the mode first. Convert locally: classify a pixel as background if it's both low-saturation and bright (`max(r,g,b)-min(r,g,b) <= 8 and min(r,g,b) >= 220`, tuned to the checker's actual measured tones — sample a few background pixels first, tone varies by generator) as a **direct per-pixel test, not a border-seeded flood fill**. A flood fill misses background trapped in pockets fully enclosed by the subject's own silhouette (inside a drawn bow, between crossed arms/legs) — those areas are genuinely background too, just unreachable from the image border. Expect thousands of stray single-pixel specks even after that (a faint texture/gradient in the "checkerboard" falls just outside tolerance in spots) — clean with a connected-component pass (`scipy.ndimage.label`), dropping any opaque blob under some minimum size (order of a few hundred px), and spot-check a few of the dropped components to confirm they're actually noise and not small legitimate details.
+
+### 2.7 Deploy pipeline
 GitHub Pages via Actions (`actions/upload-pages-artifact` + `actions/deploy-pages`) — see `.github/workflows/build-content.yml` at the repo root; it already builds `manifest.json` and deploys the whole site, so a new game folder under the repo root is live automatically once pushed. Pages deploys occasionally hit a GitHub-side timeout (~10 min) unrelated to the code — if a deploy run fails on infra grounds, the next push carries the same commit through; don't chase it as a code bug.
 
-### 2.7 Keep a living DESIGN.md
+### 2.8 Keep a living DESIGN.md
 Chat sessions can break or time out mid-project. A per-game `DESIGN.md`, updated every time a real decision is made (not just at the end), is what let this project recover context across session breaks. Write it as you go, not as a retrospective at the end.
 
 ---

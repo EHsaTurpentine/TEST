@@ -1355,16 +1355,15 @@ function drawMinerPier(){
   // pier occupied.
   if (PLAYER_ART.pier){
     const img = PLAYER_ART.pier;
-    // v7.1: anchorY was 23 (near the TOP of the post, above the plank
-    // entirely), not the plank's actual standing surface -- this needs to
-    // land at WATER_Y to match where drawMinerSkin()/drawMinerSprite()
-    // plant a miner's feet. Re-measured empirically via Playwright
-    // (iterating against a live-spawned miner, not just reading the PNG's
-    // alpha channel -- the silhouette's topmost edge turned out to be the
-    // plank's far/back edge, not the near corner a miner actually stands
-    // at). anchorY=68 lands the miner's feet flush on the plank surface.
-    const anchorX = 61, anchorY = 68;
-    const scale = 0.30;
+    // v7.2: replaced the low-detail reference-photo crop with a proper
+    // Firefly-generated dock (same source-art quality tier as the skins),
+    // background-removed locally (Firefly exported a picture of a
+    // checkerboard, not real alpha -- see NEW_GAME_GUIDE.md/DESIGN.md).
+    // anchorX/anchorY re-measured the same empirical way as the old
+    // anchorY=68 fix: the front post's plank surface, which needs to land
+    // at WATER_Y to match drawMinerSkin()/drawMinerSprite()'s feet anchor.
+    const anchorX = 100, anchorY = 64;
+    const scale = 0.21;
     // G.pierCx/pierRot: a small per-wave position+tilt roll (see
     // startWave()), same idea as the tower's. Rotated around the plank's
     // own anchor point so the miner (drawn separately at its fixed
@@ -1375,13 +1374,13 @@ function drawMinerPier(){
     const postLocalX = -anchorX * scale, postLocalY = -anchorY * scale;
     if (PLAYER_ART.pierLegs){
       // Reused net-braced leg section from the tower art, continuing the
-      // post down toward the water so the pier reads as a real structure
-      // instead of a bare stick -- the pier reference photo only showed
-      // the post itself.
+      // front post down toward the water so the pier reads as a real
+      // structure instead of a bare stick -- neither pier reference photo
+      // (old or new) showed netted bracing of its own.
       const legs = PLAYER_ART.pierLegs;
       const legsScale = 0.28;
       const legsAnchorX = 90, legsAnchorY = 0;
-      const postBottomX = 75, postBottomY = 172; // where the post exits this crop
+      const postBottomX = 90, postBottomY = 233; // where the front post exits this crop
       const attachX = postLocalX + postBottomX * scale;
       const attachY = postLocalY + postBottomY * scale;
       ctx.drawImage(legs, attachX - legsAnchorX * legsScale, attachY - legsAnchorY * legsScale,

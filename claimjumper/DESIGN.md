@@ -387,3 +387,88 @@ completely separate legacy sprite-atlas path (`drawMinerSprite`,
 wasn't touched here -- flagged, not fixed, since it's a pre-existing
 miner-sprite calibration issue rather than anything about the pier
 itself.
+
+## v7.2 art refresh — Firefly-generated skins and pier
+
+User supplied a new batch of art (`TRANSPARENT_SPRITES_CLAIMJUMPER.zip`,
+generated in Firefly): standalone rockthrower/prospector, an archer and a
+soldier each composited standing on a plank, and the plank/a small
+netted mini-tower on their own. Getting the actual files took several
+rounds -- inline pasted images in chat never landed on disk this session
+(checked `/root/.claude/uploads/`, confirmed empty after two attempts,
+including a re-attach); only a real zip upload worked. Noted since it'll
+recur: **pasted chat images ≠ file access, even when the tool literally
+sees them** -- ask for a zip/file upload if real pixel access is needed.
+
+**Firefly's "transparent background" is a picture of a checkerboard, not
+real alpha.** All 6 source PNGs loaded as flat RGB (`img.mode == 'RGB'`),
+with an actual rendered checkerboard pattern as pixel content standing in
+for transparency -- not a filename or convention issue, a real gap
+between what Firefly exports and what "transparent PNG" means. This is
+exactly the same category of problem as the original tower/pier
+extraction earlier in this project (real photos with real backgrounds),
+just from an AI generator instead of a camera. Converted locally:
+classified any pixel as background if it's both low-saturation
+(`max(r,g,b)-min(r,g,b) <= 8`) and bright (`min(r,g,b) >= 220`) --
+matching the checker's actual measured tones (~232/~251, always
+near-neutral gray) -- applied as a **direct per-pixel test, not a
+border-seeded flood fill**. Flood-fill was tried first and looked like it
+was eating real content (the bow's open interior, the gap between the
+archer's legs went solid white instead of checkered); turned out those
+really were background pixels, just in pockets fully enclosed by the
+character's own silhouette (inside the bow, between the legs) that a
+border-only flood fill can never reach. The direct per-pixel classifier
+handles enclosed pockets and border-connected background identically,
+and is simpler.
+
+That classifier alone still left ~10,000 scattered single-pixel specks
+per image (a faint texture/gradient in Firefly's "checkerboard" that
+occasionally fell just outside the tolerance) -- cleaned with a
+connected-component pass (`scipy.ndimage.label`), dropping any opaque
+blob under ~250px. Below that size the dropped components were
+confirmed to be noise, not small legitimate details (verified visually
+per-image after filtering, not just by pixel count).
+
+**Asset mapping** (worth recording since the source zip's filenames are
+just Firefly's own prompt text, not descriptive of role):
+- `rockthrower.png`, `prospector.png` — direct swaps, standalone
+  character art, no code changes needed (tight bbox crop already matches
+  `drawMinerSkin()`'s bottom-anchor-at-`WATER_Y` convention).
+- `archer.png` — swapped for a *different* generation than the
+  plank-composited one the user first showed inline (an
+  "eliminate everything except the character" variant), since it's
+  already standalone and needed no cropping-out step.
+- `soldier.png` — no standalone version existed (only ever shown
+  composited on the plank), so cropped the character out of that
+  composite (row-boundary scan to find where the wide plank begins,
+  plus a small manual patch for one stray post fragment poking into the
+  crop, then a connected-components pass keeping only the character's
+  own blob).
+- New `miner_pier.png` — the plank piece from the structures-only image,
+  replacing the old reference-photo crop. Re-measured anchorX/anchorY
+  the same empirical way as the earlier fix (against a live-spawned
+  miner, not just the alpha channel): anchorX=100, anchorY=64, scale=0.21.
+  `miner_pier_legs.png` (reused tower-netting) is unchanged underneath it,
+  just re-pointed at the new plank's front-post exit point
+  (postBottomX=90, postBottomY=233).
+- The mini-tower piece and the player-on-tower/soldier-on-plank preview
+  composite were **not** used -- decided against introducing a second
+  "which structure does this skin get" branch (some miners have their
+  own baked-in plank, multiple miners can be on screen at once with
+  different skins, only one shared pier position exists) in favor of one
+  simple rule: all four skins are character-only art standing on the one
+  shared, now much higher-quality, pier. Simpler and lower-risk than
+  per-skin structure branching, and the visual result is close to
+  equivalent.
+
+Known minor imperfection, not fixed: the soldier's headlamp glow effect
+lost some of its soft falloff to the background-removal pass (reads a
+little blocky up close) since the glow's own soft edge legitimately
+overlapped the checker's tolerance band. Left as is -- cosmetic only,
+not worth the risk of a more aggressive touch-up damaging something else
+this late in the pass.
+
+Verified via Playwright: all four skins standing on the new pier with no
+float gap, two miners with different skins on screen simultaneously
+(spread across the real `spawnMiner()` tx range) both land correctly on
+the plank, title screen and wave-intro unaffected, no console errors.
