@@ -2114,13 +2114,23 @@ function drawTrophyRow(x0,y0){
 
 function drawPlay(){
   drawSky();
-  if (G.w.poolR < 336){
-    drawBank(G.w.poolR, WATER_Y+6, BANK_X-G.w.poolR, BOT_Y-WATER_Y-6);
+  // v7.1: drawBank's flat rock-color fill was tuned for the old procedural
+  // scene and reads as a mismatched patch over a real photo backdrop --
+  // most visible on waves 5-6, whose narrower poolR (262/300, both <336)
+  // triggered the pool-edge patch that the earlier per-wave-backdrop pass
+  // never actually exercised (its verification script hardcoded poolR:336
+  // for every forced wave, so this never showed up before). poolR itself
+  // still narrows the fish/pool bounds for difficulty -- only the visible
+  // fill is skipped once a real backdrop is in play.
+  if (!waveBackdrop()){
+    if (G.w.poolR < 336){
+      drawBank(G.w.poolR, WATER_Y+6, BANK_X-G.w.poolR, BOT_Y-WATER_Y-6);
+    }
   }
   drawWater(POOL_L, G.w.poolR, WATER_Y, BOT_Y, G.t);
-  drawBank(POOL_L, BOT_Y, LW-POOL_L, LH-BOT_Y);
+  if (!waveBackdrop()) drawBank(POOL_L, BOT_Y, LW-POOL_L, LH-BOT_Y);
   drawCanyonWalls();
-  if (!(SPR.ready && SPR.sceneImg)){
+  if (!waveBackdrop() && !(SPR.ready && SPR.sceneImg)){
     // v3.0.4: this line marked the far-bank horizon against the old flat
     // procedural water fill. The scene backdrop already draws a real
     // horizon/bank line at that position, so this now reads as a stray
@@ -2284,12 +2294,6 @@ function drawTitle(){
   ctx.restore();
   ctext('PRESS ENTER TO START', 182, {font:'bold 13px Georgia', color:'#2b1d10'});
   rtext('CREDITS '+G.credits, LW-6, LH-6, {font:'11px Georgia', color:'#4a3018'});
-  // TEMPORARY diagnostic for the archer-skin-not-appearing report -- shows
-  // which skin images actually loaded, visible on-screen for a mobile
-  // player with no devtools access. Remove once diagnosed.
-  const skinStatus = ['rockthrower','archer','prospector','soldier']
-    .map(k => k[0].toUpperCase() + (SKINS[k] ? '✓' : '✗')).join(' ');
-  ltext('SKINS ' + skinStatus, 4, LH-4, {font:'9px Georgia', color:'#4a3018'});
 }
 
 function drawWaveIntro(){

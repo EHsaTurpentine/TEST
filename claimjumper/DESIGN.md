@@ -253,3 +253,32 @@ placed on wave 2's repositioned pier still stands on it correctly.
 
 `claimjumper-images/qr.png` (the end-panel QR code) is in place — decodes
 to `https://ehsaturpentine.github.io/ENGINE/engineer/`. No open items left.
+
+## v7.1 cleanup pass (post-park)
+
+Two rough edges found while getting v6 ready for the next iteration:
+
+**Leftover on-screen debug text.** The archer-skin-load diagnostic
+(`SKINS R✓ A✗ P✓ S✓`, added to `drawTitle()` to read load state on a phone
+with no devtools) was left in place after the bug was actually diagnosed
+and fixed. Removed — it was explicitly marked `TEMPORARY` in a comment but
+never cleaned up.
+
+**Procedural bank fill breaking the photo illusion in later waves.**
+`drawPlay()` called `drawBank()` (a flat `PAL.rockLt` rectangle, tuned for
+the pre-backdrop procedural scene) in two places: once whenever
+`G.w.poolR < 336` (only true for wave 5 `CHANNEL DIVERTED`, poolR 262, and
+wave 6 `THE LAST RUN`, poolR 300 — every earlier wave holds poolR at 336),
+and once unconditionally at the bottom of every wave. Both painted a solid
+rock-colored patch directly over the photo backdrop. The earlier per-wave
+verification pass never caught this because its Playwright script forced
+synthetic wave state with `poolR:336` hardcoded for every wave it tested —
+never exercising the real wave 5/6 data. All three sites (`drawBank`
+before `drawWater`, `drawBank` after, and the horizon stroke line, which
+was still gated on the old `SPR.sceneImg` flag instead of `waveBackdrop()`)
+are now skipped whenever a wave backdrop is active. `G.w.poolR` still
+narrows the fish-spawn/pool bounds for difficulty — only the visible fill
+was removed. Verified via Playwright against the real `WAVES` table
+entries for wave 5 and wave 6 (not synthetic overrides), plus a wave 1
+re-check to confirm no regression from dropping the always-on bottom
+strip.
