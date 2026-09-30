@@ -113,6 +113,55 @@ const SKINS = { ready:false, rockthrower:null, archer:null, prospector:null, sol
   }
 })();
 
+// v7.3: animated miner skins, extracted from Firefly-generated video clips
+// (CLAIMJUMPER_NEW_ASSETS_OCT_2026.zip -- 8-second/24fps clips per
+// character, each showing a real held stance + wind-up + release, not
+// just a static pose). Frames were background-removed the same way as
+// the Oct backgrounds (Firefly's "transparent" export is a picture of a
+// checkerboard, not real alpha), then masked to each frame's largest
+// connected component so the release frames' baked-in flying rock+motion
+// trail don't ship at all -- that rock would otherwise double up visually
+// with the game's own separately-spawned projectile. All frames of one
+// skin share an identical crop rectangle (the union of every frame's body
+// silhouette), so anchorX/anchorY is ONE fixed point valid across the
+// whole animation -- verified the feet sit at the same source pixel row
+// in every frame first, so there's no per-frame anchor drift.
+// Keyed like SKINS; a skin with no entry here (or not yet loaded) falls
+// back to SKINS[]'s single static pose in drawMinerSkin() -- same
+// graceful, per-skin rollout as every other asset loader in this file.
+const MINER_ANIM = {};
+const MINER_ANIM_SPEC = {
+  rockthrower: {
+    dir: 'assets/anim/rockthrower/',
+    stand: ['stand.png'],
+    wind: ['wind1.png','wind2.png','wind3.png','wind4.png','wind5.png'],
+    release: ['release1.png','release2.png','release3.png','release4.png','release5.png','release6.png','release7.png','release8.png'],
+    anchorX: 194, anchorY: 244, // stance-center / feet row, shared by every frame in this set
+  },
+};
+(function loadMinerAnim(){
+  for (const skin in MINER_ANIM_SPEC){
+    const spec = MINER_ANIM_SPEC[skin];
+    const entry = { stand:[], wind:[], release:[], anchorX:spec.anchorX, anchorY:spec.anchorY, ready:false };
+    MINER_ANIM[skin] = entry;
+    const allFiles = [];
+    for (const phase of ['stand','wind','release']){
+      spec[phase].forEach((fn, i) => allFiles.push({ phase, i, src: spec.dir + fn }));
+    }
+    let done = 0;
+    function loadOne(f, attempt){
+      const img = new Image();
+      img.onload = () => { entry[f.phase][f.i] = img; done++; if (done>=allFiles.length) entry.ready = true; };
+      img.onerror = () => {
+        if (attempt < 3) setTimeout(() => loadOne(f, attempt + 1), 400 * attempt);
+        else { done++; if (done>=allFiles.length) entry.ready = true; }
+      };
+      img.src = attempt === 1 ? f.src : (f.src + '?retry=' + attempt);
+    }
+    allFiles.forEach(f => loadOne(f, 1));
+  }
+})();
+
 // The five level-background stills -- both the WAVEINTRO card's backdrop
 // and the live PLAY scene itself (see drawSky()). One per wave, in wave
 // order: index i is WAVES[i]'s backdrop. v7.1 cut WAVES down to exactly
@@ -1037,7 +1086,25 @@ function updateMiners(){
       } else if (m.state==='wind'){
         m.arm = 1-(m.t/45);
         m.t -= 1;
-        if (m.t<=0){ throwRock(m); m.state='stand'; m.t=irnd(90,140); m.arm=0; }
+        if (m.t<=0){
+          throwRock(m);
+          // v7.3: a brief release-animation window for skins with one (see
+          // MINER_ANIM) before settling back to 'stand' -- the projectile
+          // still fires at this exact instant, same as before; this only
+          // changes what's drawn for a few extra ticks, not when the rock
+          // actually becomes a threat.
+          const anim = MINER_ANIM[m.skin];
+          if (anim && anim.ready && anim.release.length){
+            m.state='release'; m.releaseFrame=0; m.t=anim.release.length;
+          } else {
+            m.state='stand'; m.t=irnd(90,140); m.arm=0;
+          }
+        }
+      } else if (m.state==='release'){
+        const n = MINER_ANIM[m.skin].release.length;
+        m.releaseFrame = n - m.t;
+        m.t -= 1;
+        if (m.t<=0){ m.state='stand'; m.t=irnd(90,140); m.arm=0; }
       }
     } else if (m.type==='vinegar'){
       if (m.state==='stand'){
@@ -1849,6 +1916,27 @@ function drawMinerSprite(m){
 // pose in every state -- a deliberate simplification, not an attempt to
 // replicate the walk animation.
 function drawMinerSkin(m){
+  // v7.3: animated skins take priority when loaded -- see MINER_ANIM above
+  // for why the anchor point works the same way across every frame.
+  const anim = MINER_ANIM[m.skin];
+  if (anim && anim.ready){
+    let frames, idx;
+    if (m.state === 'wind' && anim.wind.length){
+      frames = anim.wind; idx = Math.min(frames.length - 1, Math.floor((m.arm || 0) * frames.length));
+    } else if (m.state === 'release' && anim.release.length){
+      frames = anim.release; idx = Math.min(frames.length - 1, m.releaseFrame || 0);
+    } else {
+      frames = anim.stand; idx = 0;
+    }
+    const img = frames[idx];
+    if (img){
+      const targetH = m.skin==='soldier' ? 56 : 50;
+      const scale = targetH / img.height;
+      const dw = img.width*scale, dh = img.height*scale;
+      ctx.drawImage(img, m.x - anim.anchorX*scale, WATER_Y - anim.anchorY*scale, dw, dh);
+      return;
+    }
+  }
   const img = SKINS[m.skin];
   const targetH = m.skin==='soldier' ? 56 : 50; // matches drawVinegarMiner's existing "taller" bump
   const scale = targetH / img.height;

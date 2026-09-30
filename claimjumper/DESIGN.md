@@ -551,3 +551,81 @@ platform height) as a side effect, without needing separate work --
 Playwright: `G.obsY` is identical (55) after `startWave()` at every wave
 1-5, and waves 1/3/5 screenshot at the same platform height with no
 console errors.
+
+## v7.3 real animation — rockthrower (first of 5)
+
+User supplied `CLAIMJUMPER_NEW_ASSETS_OCT_2026.zip`: not sprite sheets
+but five 8-second/24fps Firefly-generated video clips, one per character
+(player, soldier, rockthrower, prospector, archer), each showing a real
+sequence -- held stance, wind-up, release, recovery, and for most
+characters a walk-cycle too. Genuinely richer than anything used so far
+(every earlier art pass was a single static pose). Given the scope
+difference, checked with the user before starting: single best frame
+per character (fast, matches current architecture) vs. a few key poses
+vs. a full animation system. They chose full animation -- explicitly
+flagged as multi-session work, not a quick swap, so this pass builds
+and proves the pipeline on one character (rockthrower, the simplest
+case: standalone, no plank in frame, already needed this exact
+left-facing throw) before rolling out to the rest.
+
+**Pipeline, end to end:**
+1. `ffmpeg` (no system package available in this sandbox; pulled a
+   static binary via `pip install imageio-ffmpeg` instead of fighting
+   `apt`) extracts frames. Built low-res contact sheets (grids of every
+   Nth frame) first to read each clip's actual structure before
+   extracting anything at full resolution -- much faster than guessing
+   frame ranges blind.
+2. Same checkerboard-is-fake-transparency problem as the Oct backgrounds
+   (`min(r,g,b)>=190, spread<=12`), applied per frame.
+3. **New problem this round**: the release frames bake the thrown rock
+   directly into the image, flying away from the hand with a motion
+   trail. Left as-is, it would double up with the game's own
+   separately-spawned projectile (`G.rocks`) -- two rocks on screen
+   instead of one. Fixed by keeping only each frame's *largest connected
+   component* (the body) and discarding every other blob, which cleanly
+   drops the detached rock and trail marks regardless of where they've
+   drifted to, without needing to track the rock's position explicitly.
+4. **Consistent anchor across frames**: computed the union of every
+   frame's (body-only) bounding box and cropped every frame to that one
+   shared rectangle, rather than tightly cropping each frame to its own
+   content. A per-frame tight crop would silently shift the anchor point
+   frame to frame (jitter); a shared rectangle keeps the character's
+   actual screen position identical across the whole animation as long
+   as the real content (the feet) doesn't move -- confirmed this
+   directly (every frame's lowest opaque pixel lands on the exact same
+   row) before relying on it, rather than assuming it.
+5. Downscaled 0.4x (779x616 -> 312x246) before committing -- video-frame
+   PNGs carry codec noise/gradients real pixel-art doesn't, so they
+   compress far worse than the hand-authored statics (~30KB each at full
+   res vs. the renderer's actual ~50px-tall need); this cut the set from
+   5.7MB to ~1MB with no visible quality loss at real game scale
+   (verified via a colored-checker composite, not the white-background
+   Read preview, at 2x actual render size).
+
+**Code**: new `MINER_ANIM[skin]` structure (`{stand, wind, release}`
+frame arrays + one shared `anchorX/anchorY`), loaded the same
+retry-on-failure way as `SKINS`. `drawMinerSkin()` checks `MINER_ANIM`
+first and falls back to `SKINS`'s single static pose if a skin has no
+animated set (or it hasn't finished loading) -- same graceful per-skin
+rollout as every other asset in this file, so archer/prospector/soldier
+are completely unaffected until their turn. `updateMiners()`'s rock-type
+`wind` state now transitions to a new `release` state (one tick per
+release frame, 8 ticks here) instead of straight back to `stand`;
+`throwRock(m)` still fires at the exact same instant as before (the
+start of `release`), so gameplay timing for when the rock becomes a
+real threat is unchanged -- only what's drawn for those extra ~0.27s
+changed.
+
+Verified via Playwright: stand/wind/release frames all render with feet
+planted at an identical screen position (no jitter), the release
+sequence stepped frame-by-frame directly via state injection (not
+relying on wall-clock timing, which is too coarse for an 8-tick window)
+confirms no baked-in rock ever appears, and archer/prospector rendering
+unchanged (regression check with both on screen at once, old static
+path).
+
+**Next**: soldier, prospector, archer (same pipeline, each has its own
+plank/pier framing and walk-cycle to handle), then the player -- which
+is the hardest case, since aiming is driven by a continuous angle across
+six pose buckets today, not a state machine, and this clip only covers
+one angle. Not started yet.
