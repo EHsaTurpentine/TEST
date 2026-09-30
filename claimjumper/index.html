@@ -291,6 +291,58 @@ function nearestPlayerFigBucket(angleDeg){
   return best;
 }
 
+// v7.3: real wind-up/release/recovery animation for the player, extracted
+// from the same Firefly clip set as the five miner skins (see MINER_ANIM
+// above for the shared pipeline). Unlike the miners, this ONLY covers
+// COCKED/FLIGHT/RECOVERING -- IDLE keeps the six PLAYER_FIG_BUCKETS above
+// entirely unchanged, since those already read well across the full 8-88
+// degree aim range and this clip only shows the throw at one angle.
+// That one-angle limitation is the real constraint here: the source
+// footage's own baked throw direction measures ~8 degrees (shoulder-to
+// -hand-tip on the release frame), matching PLAYER_FIG_SPECS' shallowest
+// bucket almost exactly, so the same corrective-rotation trick already
+// proven for the idle buckets (clamped +-20deg, see PLAYER_FIG_SPECS'
+// comment) is reused here too -- reasonable near that shallow end, honestly
+// roughest at the steep end (72-88deg) where the correction caps out well
+// short of the true angle, same style of approximation as the system it
+// extends, not a new risk.
+// wind: keyed by charge (0..1), same bucket-by-fraction idea as MINER_ANIM's
+// m.arm. release: a single held pose (empty hand, mid-lunge) -- FLIGHT can
+// last a long time (the real spear is a physics object, drawn separately
+// by drawSpear(), same separation-of-concerns as every miner projectile) so
+// this is frozen for the whole state rather than animated further.
+// recovery: keyed by recovK (0..1, see fire()'s sp.recovTotal and
+// drawPlay()'s recovK computation) -- shows the spear actually being
+// re-gripped and the arm lowering back to ready, replacing the old
+// "RECOVERING re-uses the IDLE sprite, spear already back in a hand that
+// canonically just let go of it" compromise flagged in drawFigure() below.
+const PLAYER_THROW_SPEC = {
+  dir: 'assets/anim/player/',
+  wind: ['wind1.png','wind2.png','wind3.png','wind4.png','wind5.png'],
+  release: ['release1.png'],
+  recov: ['recov1.png','recov2.png','recov3.png','recov4.png','recov5.png','recov6.png','recov7.png','recov8.png'],
+  anchorX: 250, anchorY: 227, renderAngle: 8,
+};
+const PLAYER_THROW_ANIM = { wind:[], release:[], recov:[], ready:false };
+(function loadPlayerThrowAnim(){
+  const spec = PLAYER_THROW_SPEC;
+  const allFiles = [];
+  for (const phase of ['wind','release','recov']){
+    spec[phase].forEach((fn, i) => allFiles.push({ phase, i, src: spec.dir + fn }));
+  }
+  let done = 0;
+  function loadOne(f, attempt){
+    const img = new Image();
+    img.onload = () => { PLAYER_THROW_ANIM[f.phase][f.i] = img; done++; if (done>=allFiles.length) PLAYER_THROW_ANIM.ready = true; };
+    img.onerror = () => {
+      if (attempt < 3) setTimeout(() => loadOne(f, attempt + 1), 400 * attempt);
+      else { done++; if (done>=allFiles.length) PLAYER_THROW_ANIM.ready = true; }
+    };
+    img.src = attempt === 1 ? f.src : (f.src + '?retry=' + attempt);
+  }
+  allFiles.forEach(f => loadOne(f, 1));
+})();
+
 (function loadSprites(){
   let n=0, done=0;
   function chk(){ done++; if (done>=n) SPR.ready = true; }
@@ -818,7 +870,7 @@ function fire(power){
   sp.charge = 0;
   if (power < MIN_POWER){
     G.stuck = { x:G.playerX+14, y:WATER_Y+8, t:24 };
-    sp.state='RECOVERING'; sp.recov=20;
+    sp.state='RECOVERING'; sp.recov=20; sp.recovTotal=20;
     sfxFizzle();
     G.streak = 0; // fizzles count as a miss (GDD §5.2)
     return;
@@ -832,7 +884,7 @@ function fire(power){
   sp.x = G.playerX+G.shoveX+4; sp.y = G.obsY-2;
   sp.vx = Math.cos(a*D2R)*9; sp.vy = Math.sin(a*D2R)*9;
   sp.uw = 0; sp.splashed=false; sp.uwRange=range; sp.maxDepth=depth;
-  sp.live=true; sp.recov=recov; sp.state='FLIGHT';
+  sp.live=true; sp.recov=recov; sp.recovTotal=recov; sp.state='FLIGHT';
 }
 function endFlight(x,y,stick,isMiss){
   const sp = G.sp;
@@ -1613,7 +1665,7 @@ function drawPlatform(oy){
 // player's CONDITION (GDD §6.1) -- the in-world damage feedback,
 // separate from the v4.1 HUD hearts below (which replaced the old
 // close-up face portrait; this in-scene body damage stays as-is).
-function drawFigure(ox, oy, braced, moving, aimAngle, spState, chargeK){
+function drawFigure(ox, oy, braced, moving, aimAngle, spState, chargeK, recovK){
   // v3.0: sprite-backed figure for the common IDLE-aiming pose (not braced,
   // not moving, not charging/thrown). COCKED/FLIGHT/RECOVERING and moving/
   // braced states keep the v2 procedural body -- those need poses this
@@ -1653,6 +1705,45 @@ function drawFigure(ox, oy, braced, moving, aimAngle, spState, chargeK){
   // SPR.figImg aim-bucket sprite below, just with dedicated art per angle
   // instead of one photographed pose. Checked first; falls through to the
   // old bucket sprite, then the vector body, if these never load.
+  // v7.3: real wind-up/release/recovery animation, checked before the
+  // static idle buckets below -- see PLAYER_THROW_ANIM above for why this
+  // only covers COCKED/FLIGHT/RECOVERING (IDLE/MOVING keep the buckets
+  // untouched) and why one clip's baked angle is close enough to this
+  // system's shallowest bucket to reuse its same +-20deg correction.
+  if (spriteEligible && PLAYER_THROW_ANIM.ready &&
+      (spState==='COCKED' || spState==='FLIGHT' || spState==='RECOVERING')){
+    let frames, idx;
+    if (spState==='COCKED'){
+      frames = PLAYER_THROW_ANIM.wind;
+      idx = Math.min(frames.length-1, Math.floor(clamp(chargeK,0,1)*frames.length));
+    } else if (spState==='FLIGHT'){
+      frames = PLAYER_THROW_ANIM.release; idx = 0;
+    } else {
+      frames = PLAYER_THROW_ANIM.recov;
+      idx = Math.min(frames.length-1, Math.floor(clamp(recovK||0,0,1)*frames.length));
+    }
+    const img = frames[idx];
+    if (img){
+      // v7.3: body-height-matched scale, not the idle buckets' 34/390 --
+      // this crop's own source dimensions differ (the union rectangle spans
+      // the spear's full reach during both the overhead wind-up and the
+      // re-gripped recovery, wider than any single idle pose needs), so
+      // that constant would render him noticeably smaller. 0.196 instead
+      // targets the same ~36px foot-to-head body height the idle buckets
+      // read at, measured directly off this crop's own anchor point.
+      const scale = 0.196;
+      const dw = img.width*scale, dh = img.height*scale;
+      const spec = PLAYER_THROW_SPEC;
+      const target = aimAngle !== undefined ? aimAngle : 48;
+      const correction = clamp(target - spec.renderAngle, -20, 20) * D2R;
+      ctx.save();
+      ctx.translate(ox, oy);
+      ctx.rotate(correction);
+      ctx.drawImage(img, -spec.anchorX*scale, -spec.anchorY*scale, dw, dh);
+      ctx.restore();
+      return;
+    }
+  }
   const figBucket = nearestPlayerFigBucket(aimAngle !== undefined ? aimAngle : 48);
   if (figBucket && spriteEligible){
     const scale = 34 / 390; // matches the old sprite's ~34px-tall convention
@@ -2353,7 +2444,8 @@ function drawPlay(){
   const ox = G.playerX + G.shoveX;
   const braced = !!keys['KeyB'];
   const sp = G.sp;
-  drawFigure(ox, oy, braced, G.playerMoving, sp.angle, sp.state, sp.charge);
+  const recovK = (sp.state==='RECOVERING' && sp.recovTotal) ? 1-(sp.recov/sp.recovTotal) : 0;
+  drawFigure(ox, oy, braced, G.playerMoving, sp.angle, sp.state, sp.charge, recovK);
 
   const buffA = G.buffsActive[0] ? G.buffsActive[0].key : null;
   const buffB = G.buffsActive[1] ? G.buffsActive[1].key : null;

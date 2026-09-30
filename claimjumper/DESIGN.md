@@ -737,7 +737,82 @@ injection for the release window, feet-row consistency for the shared
 anchor). Committed to the feature branch; not deployed (same reasoning
 as soldier and prospector).
 
-**Next**: the player -- the hardest case of the five, since aiming is
-driven by a continuous angle across six pose buckets today, not a state
-machine, and this clip only covers one specific angle's idle-hold,
-windup, release and recovery. Not started yet.
+## v7.3 real animation — player (fifth and last)
+
+The one genuinely new design problem of the five, rather than a new
+variant of the extraction pipeline: the player's aim is a continuous
+angle across the six `PLAYER_FIG_SPECS` pose buckets (see that constant's
+own comment, above), not a `stand`/`wind`/`release` state machine like
+the miners -- and the new clip only shows the throw at one fixed angle
+(~8 degrees, measured shoulder-to-hand-tip on the release frame -- almost
+exactly `figure_up_soft`'s own baked angle), covering idle-hold,
+windup, release and recovery for that one angle only.
+
+Resolution: don't touch IDLE. The six buckets already read well across
+the full 8-88 degree range and this clip can't add anything there (one
+angle in, one angle out). Instead, the new animation only replaces what
+`sp.state` already distinguishes -- COCKED (charging), FLIGHT (spear
+physically in the air) and RECOVERING -- states the six buckets never
+actually differentiated before (the code comments on the old
+`spriteEligible`/`usedSpriteCocked` checks candidly flag this: every
+non-IDLE, non-braced state was reusing the *same* idle-bucket pose,
+including RECOVERING, which "briefly shows a spear baked into the
+sprite's hand even though narratively it's just been thrown"). Concretely:
+
+- **COCKED**: 5 windup frames (progressive raise, low to overhead),
+  indexed by `chargeK` (0..1) exactly the way `MINER_ANIM`'s wind frames
+  are indexed by `m.arm`.
+- **FLIGHT**: a single frame -- full lunge, hand empty, spear already
+  gone. FLIGHT's length is however long the real spear (a physics object)
+  takes to land, not a fixed tick count, so there's nothing to animate
+  through; the pose just holds, the same way the idle buckets already did
+  for this state, except this one is actually empty-handed instead of
+  reusing a spear-in-hand pose while the real spear is also on screen.
+- **RECOVERING**: 8 frames showing the spear visibly being re-gripped and
+  the arm lowering back toward ready, indexed by a new `recovK` (0..1).
+  `sp.recov` already counted down every tick; the only gap was knowing its
+  *starting* value to turn that into a fraction, so `fire()` now also
+  stores `sp.recovTotal` alongside it (both the normal throw and the
+  under-`MIN_POWER` fizzle case), and `drawPlay()` computes
+  `recovK = 1-(sp.recov/sp.recovTotal)` and passes it down. This is a real
+  fix for the flagged RECOVERING compromise above, not just new content:
+  the sprite now shows what's actually happening (a re-gripped spear
+  coming down) instead of a pose frozen from before the throw.
+
+Extraction was the same pipeline as the miners (checkerboard-alpha,
+`body_only_above` for his own fishing platform at y=588 in this clip),
+with one new wrinkle: the windup and recovery frames legitimately swing
+the held spear all the way to one edge of the source frame or the other
+(overhead during the windup, re-gripped and pointed off-frame during early
+recovery) -- real content, not an artifact to exclude like the previous
+four characters' problems, just a much wider shared crop rectangle as a
+result (514x229 after the usual 0.4 downscale, against the idle buckets'
+730x444).
+
+Render scale couldn't reuse the idle buckets' `34/390` constant -- that
+ratio was calibrated against their crop's own proportions, and this
+crop's are different enough (wider, for the reason above) that reusing it
+would render the player noticeably smaller than the idle pose he
+transitions to/from. Measured this crop's own foot-to-head height instead
+and picked `0.196` to land on the same ~36px body height the idle buckets
+already read at.
+
+The angle problem doesn't fully disappear: correction is clamped to the
+same +-20 degrees already proven safe for the idle buckets (see
+`PLAYER_FIG_SPECS`'s own comment on why an uncapped correction looked
+broken), which comfortably covers the shallow end near this clip's own
+~8 degree angle but is honestly rough at the steep end (72-88 degrees,
+where the true gap is 65-80 degrees and the cap only closes a quarter of
+it). Checked both ends via Playwright (angle 24 through the full
+COCKED/FLIGHT/RECOVERING sequence, and angle 80 as the worst case) --
+the steep end tilts further than the pose's own geometry really
+supports, but reads as an aiming stance, not broken. Same honest
+trade-off as the rest of this feature: one clip, one angle, and the
+existing system's own approximation strategy extended rather than a new
+one invented.
+
+All five characters plus the player are now done. Committed to the
+feature branch; **not yet merged to `main` or deployed** -- per the
+user's own instruction ("I'll take a look at the entire thing once
+you're done"), that step waits for their review rather than happening
+automatically the way rockthrower's did on its own.
