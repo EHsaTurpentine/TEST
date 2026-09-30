@@ -138,15 +138,34 @@ const MINER_ANIM_SPEC = {
     release: ['release1.png','release2.png','release3.png','release4.png','release5.png','release6.png','release7.png','release8.png'],
     anchorX: 194, anchorY: 244, // stance-center / feet row, shared by every frame in this set
   },
+  soldier: {
+    dir: 'assets/anim/soldier/',
+    // v7.3: soldier's source clip stands him on a full-width dock, unlike
+    // rockthrower's standalone footage -- his feet touching the dock's own
+    // opaque pixels merged them into one connected blob during background
+    // removal, so the extraction masked out everything at/below the dock's
+    // own top row (y=556 in the source frame) before isolating "largest
+    // component", for both the walk and stand/wind/release frame sets.
+    // walk: each frame individually tight-cropped (he physically
+    // traverses real screen distance while walking, so a shared rectangle
+    // would misalign the feet the way it did for stand/wind/release) --
+    // rendered with simple center-x/bottom-y anchoring, same convention as
+    // the original static skins, not the shared anchorX/anchorY below.
+    walk: ['walk1.png','walk2.png','walk3.png','walk4.png','walk5.png','walk6.png','walk7.png','walk8.png'],
+    stand: ['stand.png'],
+    wind: ['wind1.png','wind2.png','wind3.png','wind4.png','wind5.png'],
+    release: ['release1.png','release2.png','release3.png','release4.png','release5.png','release6.png','release7.png','release8.png'],
+    anchorX: 95, anchorY: 170, // stand/wind/release only -- stationary, so this shared rectangle's anchor holds
+  },
 };
 (function loadMinerAnim(){
   for (const skin in MINER_ANIM_SPEC){
     const spec = MINER_ANIM_SPEC[skin];
-    const entry = { stand:[], wind:[], release:[], anchorX:spec.anchorX, anchorY:spec.anchorY, ready:false };
+    const entry = { walk:[], stand:[], wind:[], release:[], anchorX:spec.anchorX, anchorY:spec.anchorY, ready:false };
     MINER_ANIM[skin] = entry;
     const allFiles = [];
-    for (const phase of ['stand','wind','release']){
-      spec[phase].forEach((fn, i) => allFiles.push({ phase, i, src: spec.dir + fn }));
+    for (const phase of ['walk','stand','wind','release']){
+      (spec[phase] || []).forEach((fn, i) => allFiles.push({ phase, i, src: spec.dir + fn }));
     }
     let done = 0;
     function loadOne(f, attempt){
@@ -1113,7 +1132,22 @@ function updateMiners(){
       } else if (m.state==='wind'){
         m.arm = 1-(m.t/75);
         m.t -= 1;
-        if (m.t<=0){ throwBottle(m); m.state='stand'; m.t=irnd(90,140); m.arm=0; }
+        if (m.t<=0){
+          throwBottle(m);
+          // v7.3: same brief release-animation window as the rock-type
+          // branch above, for skins with one -- see MINER_ANIM.
+          const anim = MINER_ANIM[m.skin];
+          if (anim && anim.ready && anim.release.length){
+            m.state='release'; m.releaseFrame=0; m.t=anim.release.length;
+          } else {
+            m.state='stand'; m.t=irnd(90,140); m.arm=0;
+          }
+        }
+      } else if (m.state==='release'){
+        const n = MINER_ANIM[m.skin].release.length;
+        m.releaseFrame = n - m.t;
+        m.t -= 1;
+        if (m.t<=0){ m.state='stand'; m.t=irnd(90,140); m.arm=0; }
       }
     } else { // jumper
       if (m.state==='stand'){
@@ -1920,6 +1954,23 @@ function drawMinerSkin(m){
   // for why the anchor point works the same way across every frame.
   const anim = MINER_ANIM[m.skin];
   if (anim && anim.ready){
+    // v7.3: walk frames use a different convention than stand/wind/release
+    // -- each is individually tight-cropped (the character physically
+    // traverses screen distance while walking, so a shared rectangle would
+    // misalign the feet the way it does for a stationary throw), so this
+    // renders them with simple center-x/bottom-y anchoring instead of the
+    // shared anchorX/anchorY below. Cycles by game tick, not m.x distance
+    // travelled -- simpler, and the walk speed is already near-constant.
+    if (m.state === 'walk' && anim.walk.length){
+      const img = anim.walk[Math.floor(G.t/4) % anim.walk.length];
+      if (img){
+        const targetH = m.skin==='soldier' ? 56 : 50;
+        const scale = targetH / img.height;
+        const dw = img.width*scale, dh = img.height*scale;
+        ctx.drawImage(img, m.x-dw/2, WATER_Y-dh, dw, dh);
+        return;
+      }
+    }
     let frames, idx;
     if (m.state === 'wind' && anim.wind.length){
       frames = anim.wind; idx = Math.min(frames.length - 1, Math.floor((m.arm || 0) * frames.length));
