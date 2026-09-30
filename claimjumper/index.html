@@ -175,6 +175,24 @@ const MINER_ANIM_SPEC = {
     release: ['release1.png','release2.png','release3.png','release4.png','release5.png','release6.png','release7.png','release8.png'],
     anchorX: 136, anchorY: 272,
   },
+  archer: {
+    dir: 'assets/anim/archer/',
+    // v7.3: archer's clip is standalone like rockthrower's but stands him
+    // on his own short plank -- same dock-merge problem as soldier's, same
+    // fix (body_only_above, y=558 in the source frame). Unlike
+    // prospector's, the thrown arrow is small and cleanly separates from
+    // the body once released (same as rockthrower's rock) -- no positional
+    // cutoff needed here, plain largest-component isolation is enough.
+    // The clip never shows the bow fully relaxed/undrawn, so 'stand'
+    // reuses the loop's own resting point (already mid-recovery, about to
+    // draw again) rather than an idle pose that doesn't exist in the
+    // source footage.
+    walk: ['walk1.png','walk2.png','walk3.png','walk4.png','walk5.png','walk6.png','walk7.png','walk8.png'],
+    stand: ['stand.png'],
+    wind: ['wind1.png','wind2.png','wind3.png','wind4.png','wind5.png'],
+    release: ['release1.png','release2.png','release3.png','release4.png','release5.png','release6.png','release7.png','release8.png'],
+    anchorX: 180, anchorY: 194,
+  },
 };
 (function loadMinerAnim(){
   for (const skin in MINER_ANIM_SPEC){

@@ -711,8 +711,33 @@ scope of 5 characters to do in one pass.
 Committed to the feature branch; not deployed (same reasoning as
 soldier).
 
-**Next**: archer (standalone footage like rockthrower/prospector, own
-walk-cycle and aim-hold to analyze), then the player -- the hardest case,
-since aiming is driven by a continuous angle across six pose buckets
-today, not a state machine, and this clip only covers one angle. Not
-started yet.
+## v7.3 real animation — archer (fourth of 5)
+
+The cleanest of the four so far -- standalone-on-a-short-plank like
+soldier's dock problem (same `body_only_above`, same fix, y=558 in this
+clip), but no baked-in-projectile issue: the fired arrow is small and
+separates fully from the body within a single frame once released, same
+as rockthrower's rock, so plain largest-component isolation after the
+dock cutoff was enough. No erosion, no positional cutoff, no saturation
+tricks needed this time.
+
+One wrinkle instead of a pixel-processing one: the `archer_aim` clip
+never shows a relaxed, undrawn bow -- it opens already mid-draw and ends
+back at a tensed ready-to-draw-again pose, looping through hold -> snap
+-> arrow-away -> recover, never a true idle. Used the loop's own
+end point as `stand` rather than inventing one, since re-nocking reads
+fine as "at the ready" for a ranged unit. The separate `archer_walk`
+clip has him walking down a full-width dock before he stops and starts
+drawing -- only the early, clearly-mid-stride frames were used for the
+walk cycle; the frames where he's already slowing to aim were left out
+of that set entirely.
+
+Verified the same way as the other three (Playwright, direct state
+injection for the release window, feet-row consistency for the shared
+anchor). Committed to the feature branch; not deployed (same reasoning
+as soldier and prospector).
+
+**Next**: the player -- the hardest case of the five, since aiming is
+driven by a continuous angle across six pose buckets today, not a state
+machine, and this clip only covers one specific angle's idle-hold,
+windup, release and recovery. Not started yet.
