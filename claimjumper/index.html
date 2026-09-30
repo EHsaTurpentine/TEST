@@ -157,6 +157,24 @@ const MINER_ANIM_SPEC = {
     release: ['release1.png','release2.png','release3.png','release4.png','release5.png','release6.png','release7.png','release8.png'],
     anchorX: 95, anchorY: 170, // stand/wind/release only -- stationary, so this shared rectangle's anchor holds
   },
+  prospector: {
+    dir: 'assets/anim/prospector/',
+    // v7.3: prospector's throw clip bakes in the thrown gold nugget PLUS a
+    // soft ambient glow that trails it -- unlike rockthrower's rock/soldier's
+    // bottle (small, cleanly separable), this glow is one continuous soft
+    // gradient fused to the body in the same connected blob, with no gap a
+    // largest-component pass can find. Fixed positionally instead: columns
+    // left of x=410 (source pixels) are masked out before isolating the body
+    // in the last wind frame and all release frames, the only ones the glow
+    // reaches. Costs the very fingertip of the pointing gesture in later
+    // release frames (it points into where the glow was) -- an acceptable
+    // trade at ~50px render height.
+    walk: ['walk1.png','walk2.png','walk3.png','walk4.png','walk5.png','walk6.png','walk7.png','walk8.png'],
+    stand: ['stand.png'],
+    wind: ['wind1.png','wind2.png','wind3.png','wind4.png','wind5.png'],
+    release: ['release1.png','release2.png','release3.png','release4.png','release5.png','release6.png','release7.png','release8.png'],
+    anchorX: 136, anchorY: 272,
+  },
 };
 (function loadMinerAnim(){
   for (const skin in MINER_ANIM_SPEC){

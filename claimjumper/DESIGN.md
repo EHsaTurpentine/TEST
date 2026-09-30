@@ -624,8 +624,95 @@ confirms no baked-in rock ever appears, and archer/prospector rendering
 unchanged (regression check with both on screen at once, old static
 path).
 
-**Next**: soldier, prospector, archer (same pipeline, each has its own
-plank/pier framing and walk-cycle to handle), then the player -- which
-is the hardest case, since aiming is driven by a continuous angle across
-six pose buckets today, not a state machine, and this clip only covers
-one angle. Not started yet.
+## v7.3 real animation — soldier (second of 5)
+
+Same pipeline as rockthrower, plus two new problems specific to his
+source clip:
+
+1. **Dock merges with the body.** Rockthrower's footage is standalone;
+   soldier stands on a full-width dock, and his feet touching the dock's
+   own opaque pixels joined them into one connected blob -- "keep the
+   largest component" then kept the *entire dock* as part of "the body".
+   Diagnosed with a row-density scan (opaque-pixel count per row jumps
+   from ~150-200 to ~950 right where the dock starts, y~556) and fixed
+   with `body_only_above(rgba, y_cutoff)`: zero every pixel at/below the
+   dock's own top row *before* largest-component labeling, so the body
+   is isolated first and the dock never enters the candidate set at all.
+   Applied to both the walk and stand/wind/release frame sets.
+2. **Walk cycle needs a different anchor strategy than stand/wind/release.**
+   He physically translates across real screen distance while walking, so
+   the shared-crop-rectangle trick (one fixed anchor for every frame)
+   would misalign the feet frame to frame the way it doesn't for a
+   stationary throw. Split into two code paths: `process_set()` (shared
+   rectangle + one `anchorX`/`anchorY`, stationary states only) and
+   `process_walk_frames()` (each frame individually tight-cropped, simple
+   center-x/bottom-y anchoring -- the same convention the original static
+   skins already used). `drawMinerSkin()` picks the walk path first when
+   `m.state==='walk'`, cycling by game tick (`Math.floor(G.t/4)`) rather
+   than distance traveled, since walk speed is already near-constant.
+
+Verified the same way as rockthrower (Playwright, direct state
+injection for the 8-tick release window, feet-row consistency check
+before trusting the shared anchor). Committed to the feature branch; not
+deployed yet -- the user asked to review the whole set together once
+every character is done, rather than piece by piece like rockthrower.
+
+## v7.3 real animation — prospector (third of 5)
+
+No dock this time (standalone footage like rockthrower), but a new
+variant of the "baked-in thrown-object" problem: the release frames bake
+in not just the thrown gold nugget but a soft ambient glow trailing it,
+and unlike rockthrower's rock or soldier's bottle (both small, cleanly
+separable), this glow is one continuous soft-alpha gradient fused to the
+body as a single connected shape -- there is no seam for a
+largest-component pass to find. Tried and discarded two fixes before
+landing on the one that worked:
+
+- **Binary erosion + seeded component selection** (erode the opaque mask
+  enough iterations to sever a thin bridge, then keep whichever
+  post-erosion component contains a known torso point): didn't work even
+  at 25 iterations, because the "bridge" isn't thin -- it's a wide, smooth
+  gradient with no thin point to erode through.
+- **Saturation-based background reclassification** (also treat
+  bright-and-low-saturation pixels as background, to catch the glow's
+  pale near-white halo the normal `spread<=12` checkerboard test doesn't
+  catch): reduced the glow but didn't eliminate it, because the gradient
+  stays *moderately* saturated for most of its width, not just at the
+  faint outer edge -- and a threshold loose enough to catch that also
+  risks eating real light-colored body parts (tested against his skin
+  highlights specifically to confirm the overlap).
+
+What actually worked: a straightforward **positional cutoff**. The
+verified-clean wind frames never put real body content left of source
+x=411; the glow, by contrast, reaches all the way to the frame edge from
+the last wind frame onward. So `body_only_right_of(rgba, x_cutoff=410)`
+zeroes every pixel left of that column before largest-component
+labeling, for the wind5 and all 8 release frames only (wind1-4 and stand
+are clean and use plain `body_only`). Trade-off: since his pointing
+fingertip in the later release frames extends into the same region the
+glow occupies, cutting the glow also costs the very tip of the finger --
+visually the gesture still reads fine (wrist and forearm remain), and
+this is a small cost at ~50px render height.
+
+The walk cycle turned out to have the same category of problem in
+miniature: a soft ground-level glow pooling near his lanterns, same
+"connected gradient, no seam" shape. A position cutoff doesn't work here
+(he's mid-translation, so there's no fixed column), so this one uses the
+saturation-based reclassification after all (`mx>=200 & sat<0.22`, i.e.
+bright *and* nearly-neutral tinted-white, same test rejected above for
+the release frames) but restricted to `y>=300` -- below the head/face, so
+it can't touch his eyes, which in this particular clip render bright
+enough to otherwise trip the same rule (a pre-existing quirk of the plain
+background-removal test too, not something this introduced; invisible at
+actual sprite scale). Meaningfully smaller residual glow, not perfectly
+clean, but no longer reads as a floating artifact -- reasonable at the
+scope of 5 characters to do in one pass.
+
+Committed to the feature branch; not deployed (same reasoning as
+soldier).
+
+**Next**: archer (standalone footage like rockthrower/prospector, own
+walk-cycle and aim-hold to analyze), then the player -- the hardest case,
+since aiming is driven by a continuous angle across six pose buckets
+today, not a state machine, and this clip only covers one angle. Not
+started yet.
