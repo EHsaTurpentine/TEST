@@ -187,11 +187,19 @@ const MINER_ANIM_SPEC = {
     // reuses the loop's own resting point (already mid-recovery, about to
     // draw again) rather than an idle pose that doesn't exist in the
     // source footage.
+    // v7.3.1: unlike the other four, archer's source clip faced RIGHT (all
+    // the others happened to face left already) -- missed at ship time, so
+    // he drew facing away from the player and walked toward the pier
+    // backwards. Fixed by flipping every frame in this set horizontally
+    // (offline, same precedent as the original rockthrower.png facing fix
+    // from before the animation pass), not with a runtime ctx.scale --
+    // walk's own center-x/bottom-y anchor is symmetric under a flip so it
+    // needed no change, but anchorX here is mirrored (275-180=95) to match.
     walk: ['walk1.png','walk2.png','walk3.png','walk4.png','walk5.png','walk6.png','walk7.png','walk8.png'],
     stand: ['stand.png'],
     wind: ['wind1.png','wind2.png','wind3.png','wind4.png','wind5.png'],
     release: ['release1.png','release2.png','release3.png','release4.png','release5.png','release6.png','release7.png','release8.png'],
-    anchorX: 180, anchorY: 194,
+    anchorX: 95, anchorY: 194,
   },
 };
 (function loadMinerAnim(){
@@ -884,7 +892,7 @@ function fire(power){
   sp.x = G.playerX+G.shoveX+4; sp.y = G.obsY-2;
   sp.vx = Math.cos(a*D2R)*9; sp.vy = Math.sin(a*D2R)*9;
   sp.uw = 0; sp.splashed=false; sp.uwRange=range; sp.maxDepth=depth;
-  sp.live=true; sp.recov=recov; sp.recovTotal=recov; sp.state='FLIGHT';
+  sp.live=true; sp.recov=recov; sp.recovTotal=recov; sp.state='FLIGHT'; sp.flightTicks=0;
 }
 function endFlight(x,y,stick,isMiss){
   const sp = G.sp;
@@ -1322,7 +1330,7 @@ function updatePlay(){
 
   G.playerMoving = updateMovement();
   updateThrow(dt);
-  if (G.sp.live) updateSpearFlight();
+  if (G.sp.live) { G.sp.flightTicks = (G.sp.flightTicks||0) + 1; updateSpearFlight(); }
   else if (G.sp.state==='RECOVERING'){
     G.sp.recov -= 1;
     if (G.sp.recov<=0){ G.sp.state='IDLE'; G.sp.charge=0; }
@@ -1665,7 +1673,7 @@ function drawPlatform(oy){
 // player's CONDITION (GDD §6.1) -- the in-world damage feedback,
 // separate from the v4.1 HUD hearts below (which replaced the old
 // close-up face portrait; this in-scene body damage stays as-is).
-function drawFigure(ox, oy, braced, moving, aimAngle, spState, chargeK, recovK){
+function drawFigure(ox, oy, braced, moving, aimAngle, spState, chargeK, recovK, flightTicks){
   // v3.0: sprite-backed figure for the common IDLE-aiming pose (not braced,
   // not moving, not charging/thrown). COCKED/FLIGHT/RECOVERING and moving/
   // braced states keep the v2 procedural body -- those need poses this
@@ -1710,8 +1718,19 @@ function drawFigure(ox, oy, braced, moving, aimAngle, spState, chargeK, recovK){
   // only covers COCKED/FLIGHT/RECOVERING (IDLE/MOVING keep the buckets
   // untouched) and why one clip's baked angle is close enough to this
   // system's shallowest bucket to reuse its same +-20deg correction.
+  // v7.3.1: FLIGHT only shows the lunge/follow-through for a short beat
+  // (FLIGHT_POSE_TICKS) rather than for the state's whole duration. FLIGHT
+  // lasts as long as the real spear's physics flight does (often well over
+  // a second), and holding one dramatic frozen pose that entire time read
+  // as the figure getting stuck -- worse than the old always-the-idle-pose
+  // behavior it replaced, since a frozen lunge draws the eye in a way a
+  // frozen neutral stance doesn't. Past that beat this falls through to
+  // the same idle-bucket sprite used before this feature existed, the same
+  // graceful degradation every other path below already relies on.
+  const FLIGHT_POSE_TICKS = 10;
+  const showFlightPose = spState==='FLIGHT' && (flightTicks||0) < FLIGHT_POSE_TICKS;
   if (spriteEligible && PLAYER_THROW_ANIM.ready &&
-      (spState==='COCKED' || spState==='FLIGHT' || spState==='RECOVERING')){
+      (spState==='COCKED' || showFlightPose || spState==='RECOVERING')){
     let frames, idx;
     if (spState==='COCKED'){
       frames = PLAYER_THROW_ANIM.wind;
@@ -2445,7 +2464,7 @@ function drawPlay(){
   const braced = !!keys['KeyB'];
   const sp = G.sp;
   const recovK = (sp.state==='RECOVERING' && sp.recovTotal) ? 1-(sp.recov/sp.recovTotal) : 0;
-  drawFigure(ox, oy, braced, G.playerMoving, sp.angle, sp.state, sp.charge, recovK);
+  drawFigure(ox, oy, braced, G.playerMoving, sp.angle, sp.state, sp.charge, recovK, sp.flightTicks||0);
 
   const buffA = G.buffsActive[0] ? G.buffsActive[0].key : null;
   const buffB = G.buffsActive[1] ? G.buffsActive[1].key : null;
@@ -2529,8 +2548,18 @@ function drawPlay(){
       ctx.beginPath(); ctx.moveTo(r.x-r.vx*1.2,r.y-r.vy*1.2); ctx.lineTo(r.x+r.vx*0.6,r.y+r.vy*0.6); ctx.stroke();
     } else if (r.skin==='prospector'){
       // v7 §1.4: gem/nugget is flavor only -- same hit as a plain rock.
+      // v7.3.1: added the same fading motion-trail vinegar/archer already
+      // had -- a bare 3x3 square with no trail reads as a single flickering
+      // dot at 30fps once it's moving fast, easy to lose track of entirely
+      // (reported as "the rocks disappear") against the new, busier,
+      // larger character art. Plain rockthrower rocks below get the same
+      // fix, for the same reason.
+      ctx.strokeStyle='rgba(232,210,74,0.4)'; ctx.lineWidth=1.2;
+      ctx.beginPath(); ctx.moveTo(r.x-r.vx*2, r.y-r.vy*2); ctx.lineTo(r.x,r.y); ctx.stroke();
       ctx.fillStyle='#e8d24a'; ctx.fillRect(r.x-1.5,r.y-1.5,3,3);
     } else {
+      ctx.strokeStyle='rgba(90,95,102,0.4)'; ctx.lineWidth=1.2;
+      ctx.beginPath(); ctx.moveTo(r.x-r.vx*2, r.y-r.vy*2); ctx.lineTo(r.x,r.y); ctx.stroke();
       ctx.fillStyle='#5a5f66'; ctx.fillRect(r.x-1.5,r.y-1.5,3,3);
     }
   }
