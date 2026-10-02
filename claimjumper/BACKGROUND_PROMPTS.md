@@ -34,6 +34,6 @@ All five open with the same style anchor, kept word-for-word across the set, so 
 - **Level 2's human trace is kept to a fish-weir and a canoe**, not anything European/1066-specific, since 1066 is functioning here as a "long ago, recognizable date" anchor rather than a literal historical claim about this specific river.
 - **Level 3 stays light on the disease angle visually** (hard to depict respectfully and unambiguously in a background image) and carries that weight through environmental scarring instead — worth another pass if that history should be represented more directly.
 
-## Open follow-up
+## Resolved follow-up
 
-Once the actual generated backgrounds are in hand and wired into `claimjumper/assets/`, the in-game wave-intro year labels (currently `1492 A.D.` / `1776 A.D.` / `1863 A.D.` for waves 3-5, set in `claimjumper/index.html`'s `WAVES` array) should be updated to `1804 A.D.` / `1863 A.D.` / `1927 A.D.` to match this timeline — confirmed with the user, not yet done since the code shouldn't drift ahead of the art it's describing.
+Done as of the backgrounds landing: the five images generated from the prompts above are wired into `claimjumper/assets/bg_*.png`, and the wave-intro year labels in `claimjumper/index.html`'s `WAVES` array were updated to match this timeline (`1492 A.D.` / `1776 A.D.` / `1863 A.D.` → `1804 A.D.` / `1863 A.D.` / `1927 A.D.` for waves 3-5). See DESIGN.md for the integration notes (crop/resize approach, and where the generated set departed from these prompts).

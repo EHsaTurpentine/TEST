@@ -816,3 +816,98 @@ feature branch; **not yet merged to `main` or deployed** -- per the
 user's own instruction ("I'll take a look at the entire thing once
 you're done"), that step waits for their review rather than happening
 automatically the way rockthrower's did on its own.
+
+**Update**: reviewed and merged to `main` shortly after.
+
+## v7.3.1 — post-launch animation fixes
+
+Three issues reported once the full five-character-plus-player set went
+live:
+
+- **Archer faced the wrong way.** All four other characters' source
+  clips happened to face screen-left already; archer's didn't, and
+  nothing in the pipeline checked for it. Fixed by flipping his 22
+  frames offline (same precedent as the original `rockthrower.png`
+  facing fix from before the animation pass) and mirroring `anchorX`
+  (275-180=95) to match. `ANIMATION_PROMPTS.md` (below) now states
+  facing explicitly for every character so this doesn't happen again.
+- **The player's throw follow-through read as stuck.** `FLIGHT` held one
+  frozen lunge pose for the state's whole duration -- however long the
+  real spear's physics flight takes, often over a second -- which drew
+  the eye in a way the old always-the-idle-pose behavior never did.
+  Fixed with a new `sp.flightTicks` counter: the lunge now holds for a
+  short beat (`FLIGHT_POSE_TICKS=10`) then falls through to the same
+  idle-bucket sprite used before this feature existed, for the rest of
+  the flight.
+- **Rockthrower's (and prospector's) rock "disappeared."** Both were a
+  bare 3x3 square with no motion cue, unlike the vinegar bottle and
+  archer's arrow, which already had a fading trail -- easy to lose
+  entirely at speed against the new, busier character art. Gave both the
+  same trail treatment.
+
+Verified via Playwright (archer facing in both walk and stand, the
+FLIGHT pose before/after the 10-tick cutover, the rock trail visible in
+flight) plus a full regression with all four skins and the player on
+screen together. Merged to `main`.
+
+## v7.3.2 — new backgrounds from `ANIMATION_PROMPTS.md`'s sibling pass
+
+Wrote `ANIMATION_PROMPTS.md` (a Firefly prompt set for a *future*
+animation revision pass, addressing the facing/dock-fusion/glow lessons
+above) at the user's request, in the same format as the existing
+`BACKGROUND_PROMPTS.md`. Separately, the user came back with Firefly
+output generated from `BACKGROUND_PROMPTS.md` itself (the five-level
+background set written earlier but never actually generated/wired in --
+see that file's former "Open follow-up" section) and asked to have it
+integrated.
+
+**What shipped vs. what was asked for**: four of the five generated
+images are strong, faithful matches to their prompts. The second
+("1066 A.D.") needed a user-driven Firefly edit pass first -- the
+initial generation put a European-style log cabin on stilts in frame,
+which read as settler architecture for a date the prompt specifically
+meant to be pre-contact; the corrected version swaps it for teepees and
+a round hut (still more structure than the prompt's literal "no
+structures," but tonally the right call, and this is the version
+wired in). The fifth ("1927 A.D.") also went through a user edit pass
+to add the "massive rust-streaked bucket-line dredge" the original
+prompt asked for but the first generation omitted, plus removed
+foreground trees that were crowding the shot -- also the version wired
+in. Levels 1, 3, and 4 are the first-pass generations, unedited, and
+all match their prompts closely.
+
+**Integration had one real technical problem to solve**: `drawSky()`
+draws every background via `ctx.drawImage(bg, 0, 0, LW, LH)` -- a hard
+stretch to the logical 400x240 canvas, with a code comment claiming "the
+source crop's aspect ratio was chosen to exactly match LW:LH, so there's
+no stretch in either axis." The *previous* five background files
+(336x378-ish, aspect ~0.89) didn't actually match LW:LH's 1.667 aspect
+at all -- that comment was stale, and the live game was quietly
+stretching them noticeably wide the whole time. The new generations are
+2304x1792 (aspect 1.286) -- closer to landscape, still not exactly
+1.667 -- so each was center-weighted-cropped (trimming more from the top
+sky than the bottom foreground, by eye per image to keep the subject --
+sun, mountains, camp -- well framed) to exactly 1.667 before a final
+resize to 800x480. This both fixes the long-standing stretch and bumps
+resolution well past the old files' (previously blurry when stretched up
+to the in-game canvas). Same five filenames reused
+(`bg_mountainvista.png` etc.) so `WAVE_BG_FILES` in `index.html` didn't
+need to change.
+
+**Also done**: the wave-intro year labels, stale since before any of
+this art existed (`1492 A.D.` / `1776 A.D.` / `1863 A.D.` for waves
+3-5), updated to `1804 A.D.` / `1863 A.D.` / `1927 A.D.` to match the
+backgrounds they now actually sit next to -- the change
+`BACKGROUND_PROMPTS.md` flagged as blocked on exactly this art landing.
+
+**One minor, non-blocking note**: the 1804 A.D. (wave 3) background has
+a very small human figure near the tent on its right side, left over
+from the generation despite the prompt's "no people" instruction.
+Checked at actual in-game scale (both the WAVEINTRO card and live PLAY)
+and it's imperceptible -- a few indistinct pixels, not worth a
+regeneration. Flagged here in case it's ever enlarged or cropped
+differently in a future pass.
+
+Verified via Playwright across all five waves (WAVEINTRO card and live
+PLAY scene, confirming the year-label fix and no stretch/composite
+regressions) before merging to `main`.
