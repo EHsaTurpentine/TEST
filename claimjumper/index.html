@@ -1003,8 +1003,9 @@ function updateSpearFlight(){
 // G.wave progresses globally across the run, not per-stage, and once a
 // skin is introduced it stays in the pool.
 function rockSkinPool(){
-  if (G.wave<=2) return ['rockthrower'];
-  if (G.wave<=4) return ['rockthrower','archer'];
+  // Period-specific: no white enemies before the 1862 gold rush (wave 3).
+  if (G.wave<=1) return ['rockthrower'];
+  if (G.wave<=2) return ['rockthrower','archer'];
   return ['rockthrower','archer','prospector'];
 }
 
@@ -2250,7 +2251,9 @@ function drawStreakHUD(){
   }
 }
 function drawBanner(){
-  if (G.banner){
+  // Pop-up text banners are switched off for now (less text in the game).
+  // G.banner is still set by the game logic; it just isn't drawn.
+  if (false && G.banner){
     ctx.save();
     ctx.globalAlpha = clamp(G.banner.t/15,0,1);
     boldCText(G.banner.text, 40, 15);
@@ -2467,7 +2470,6 @@ function drawPlay(){
   // so this is safe to draw unconditionally.
   iconSpearTick(4, 40);
   ctx.fillStyle = PAL.gold; ctx.fillRect(14, 42, Math.min(40, 4+sp.charge*40), 3);
-  if (G.catchFlash) ctext('CAUGHT: '+G.catchFlash.name, 58, {font:'13px Georgia', color:'#2b1d10'});
   drawBanner();
 }
 
@@ -2478,10 +2480,6 @@ function drawLifeLost(){
   const k = clamp(G.fallT/60,0,1);
   if (k > 0.35){
     ctx.fillStyle = 'rgba(14,20,36,0.55)'; ctx.fillRect(0,0,LW,LH);
-    let msg = 'YOU WENT INTO THE WATER';
-    if (G.fallKind==='knocked') msg = 'KNOCKED DOWN';
-    else if (G.fallKind==='vinegar') msg = 'SOAKED IN VINEGAR';
-    boldCText(msg, 118, 16);
     ctext('LIVES '+Math.max(G.lives,0), 142, {font:'13px Georgia', color:'#f2ead8'});
   }
 }
@@ -2500,11 +2498,6 @@ function drawTitle(){
   drawWater(0, LW, 150, LH, G.t);
   drawCanyonWalls();
   boldCText('CLAIMJUMPER!', 74, 34);
-  ctext('SPEAR FISH. WATCH FOR MINERS.', 100, {font:'13px Georgia', color:'#4a3018'});
-  const a = 0.55 + Math.sin(G.t*0.12)*0.45;
-  ctx.save(); ctx.globalAlpha = a;
-  boldCText('MOUSE AIM \u00b7 HOLD SPACE OR CLICK TO THROW', 160, 12);
-  ctx.restore();
   ctext('PRESS ENTER TO START', 182, {font:'bold 13px Georgia', color:'#2b1d10'});
   rtext('CREDITS '+G.credits, LW-6, LH-6, {font:'11px Georgia', color:'#4a3018'});
 }
@@ -2513,15 +2506,10 @@ function drawWaveIntro(){
   const bg = waveBackdrop();
   if (bg) ctx.drawImage(bg, 0, 0, LW, LH);
   else drawSky();
-  boldCText('WAVE '+G.wave, 70, 26);
-  ctext(G.w.name, 94, {font:'14px Georgia', color:'#4a3018'});
   // v7.4: dropped "PLATFORM: X FEET" -- TOWER_H has been one fixed
   // constant across every wave since v7.2 (see its own comment), so this
   // was a stat that never actually varied and never meant anything.
   // Lines below shifted up to fill the gap instead of leaving it empty.
-  if (G.wave===G.vinegarWave && !G.vinegarSpawned){
-    ctext('SOME OF THEM CAME UP FROM VINEGAR HILL.', 110, {font:'11px Georgia', color:'#6b3018'});
-  }
   if (G.wave===1){
     // v7.4: was two lines of control prose; trimmed filler words (OR, TO,
     // A ROCK) rather than dropping any actual control, and split the
