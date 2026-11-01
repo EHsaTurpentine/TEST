@@ -44,7 +44,7 @@ import { GameLoop } from '../engine/index.js';
    single-file build (1,138 lines, ported 1:1 from the hardware-
    tested Playdate Lua source). This pass adds: lives/credits/
    continues, a CONDITION damage system split out of BALANCE,
-   platform movement + dodging, a progressive spear-buff system,
+   platform movement + dodging,
    two repair paths, rebuilt spearfisher/portrait/fish/vinegar-
    miner art, and the guaranteed bottle-of-vinegar encounter.
    Self-contained vanilla JS + Canvas. No dependencies.
@@ -566,8 +566,6 @@ function sfxWaveClear(){ tone(523, 0.10, 'square', 0.20); tone(784, 0.16, 'trian
 function sfxPageTurn(){ tone(500, 0.05, 'triangle', 0.14); }
 
 // --- v2 additions: lives/credits, unlocks, streak, repair, vinegar ---
-function sfxUnlock(){ tone(660,0.08,'square',0.2); tone(880,0.12,'square',0.18, actx?actx.currentTime+0.07:undefined); }
-function sfxBuffOn(){ tone(523,0.06,'square',0.16); tone(784,0.08,'square',0.14, actx?actx.currentTime+0.04:undefined); }
 function sfxStreak(){ tone(784,0.07,'triangle',0.18); tone(988,0.09,'triangle',0.16, actx?actx.currentTime+0.05:undefined); }
 function sfxExtend(){ tone(523,0.1,'square',0.2); tone(659,0.1,'square',0.2, actx?actx.currentTime+0.05:undefined); tone(880,0.16,'square',0.2, actx?actx.currentTime+0.1:undefined); }
 function sfxPatched(){ tone(440,0.12,'triangle',0.2); tone(660,0.14,'triangle',0.18, actx?actx.currentTime+0.06:undefined); }
@@ -633,19 +631,6 @@ const WAVES = [
   { name:'1927 A.D.',        jitter:3, poolR:262, target:9,  w:{redband:.60,bull:.33,chinook:.05,steelhead:.02},  minerFirst:20, gap:[16,20] },
 ];
 
-// --- v2: the progressive spear — buff catalogue (GDD §4) ---
-const BUFFS = {
-  quickhaft:    { name:'QUICK HAFT',    dur:20 },
-  ironhead:     { name:'IRON HEAD',     dur:20 },
-  leistertines: { name:'LEISTER TINES', dur:20 },
-  searunline:   { name:'SEA-RUN LINE',  dur:15 },
-  pitchtorch:   { name:'PITCH TORCH',   dur:25 },
-  obsidianedge: { name:'OBSIDIAN EDGE', dur:30 },
-};
-// priority order when a drop must choose which buff to activate, and
-// which active buff to refresh once the 2-buff cap is already full
-const BUFF_PRIORITY = ['obsidianedge','searunline','leistertines','ironhead','pitchtorch','quickhaft'];
-function hasBuff(key){ return G.buffsActive.some(b=>b.key===key); }
 
 function pickSpecies(wts){
   const r = Math.random(); let acc = 0;
@@ -665,9 +650,9 @@ function pickSpecies(wts){
 // as on hardware. Catch radius, power bands, and flight physics below
 // are ported unchanged except where a v2 buff explicitly modifies them.
 const ANGLE_RATE = 48; // deg/sec, matches Playdate's 1.6deg/frame @ 30fps
-const CHARGE_TIME = 0.85; // seconds to reach full power (base; QUICK HAFT shortens this)
+const CHARGE_TIME = 0.85; // seconds to reach full power 
 const MIN_POWER = 0.10;   // below this: a fizzled, too-weak throw
-function chargeTime(){ return hasBuff('quickhaft') ? 0.55 : CHARGE_TIME; }
+function chargeTime(){ return CHARGE_TIME; }
 
 function powerBand(p){
   if (p < 0.3) return [45, 90, 20];
@@ -696,7 +681,6 @@ let G = {
   minerTimer:0, spawnTimer:0, spawned:0, fallT:0, fallKind:null,
   endScroll:0, endStroke:0, tallyPages:[{type:'intro'}], tallyPage:0,
   minersSpeared:0, minersSpearedWave:0,
-  buffsAvail:{}, buffsActive:[],
   streak:0,
   vinegarWave:null, vinegarSpawned:false, vinegarKilled:false,
   vinegarSecondPlanned:false, vinegarSecondUsed:false,
@@ -756,7 +740,6 @@ function startRun(){
   G.lives=3; G.credits=3;
   G.livesUsed=0; G.bestWave=1;
   G.minersSpeared=0;
-  G.buffsAvail={}; G.buffsActive=[];
   G.streak=0;
   G.vinegarKilled=false; G.vinegarSecondUsed=false; G.vinegarSecondPlanned=false;
   scheduleVinegar();
@@ -765,7 +748,7 @@ function startRun(){
 
 // --- v2: resume behaviour after a life is lost (GDD §1.3) — the
 // current wave, spawned/cache/total/seen, and live fish all carry
-// over untouched; condition/miners/rocks/spear/buffs/streak
+// over untouched; condition/miners/rocks/spear/streak
 // reset, and the wave is not restarted.
 function resumeWave(){
   G.condition = 4;
@@ -774,7 +757,6 @@ function resumeWave(){
   G.sp = newSpear();
   G.playerX = OBS_X; G.playerVX = 0; G.playerMoving = false;
   G.shoveX=0; G.shoveT=0; G.hitFlash=null; G.stuck=null; G.catchFlash=null; G.minerHit=null;
-  G.buffsActive = [];
   G.streak = 0;
   G.banner = null;
 }
@@ -907,8 +889,6 @@ function fire(power){
   const err = clamp((1-power)*4, 0, 4);
   const a = clamp(sp.angle + rnd(-err,err), 6, 88);
   let [depth, range, recov] = powerBand(power);
-  if (hasBuff('quickhaft'))    recov = Math.round(recov*0.6);
-  if (hasBuff('ironhead'))     { depth = Math.round(depth*1.4); range = Math.round(range*1.4); }
   sp.power = power;
   sp.x = G.playerX+G.shoveX+4; sp.y = G.obsY-2;
   sp.vx = Math.cos(a*D2R)*9; sp.vy = Math.sin(a*D2R)*9;
@@ -918,8 +898,7 @@ function fire(power){
 function endFlight(x,y,stick,isMiss){
   const sp = G.sp;
   sp.live=false;
-  if (hasBuff('searunline')){ sp.state='IDLE'; sp.charge=0; } // no RECOVERING state
-  else sp.state='RECOVERING';
+  sp.state='RECOVERING';
   if (stick) G.stuck = {x,y,t:40};
   if (isMiss) G.streak = 0;
 }
@@ -931,57 +910,10 @@ function handleStreak(){
   else if (G.streak>8 && (G.streak-8)%4===0){ G.condition=Math.min(4,G.condition+1); G.banner={text:'STREAK '+G.streak, t:50}; sfxStreak(); }
 }
 
-// --- v2: weapon unlocks (GDD §4) ---
-function announceUnlock(key){
-  G.buffsAvail[key] = true;
-  G.banner = {text:'UNLOCKED \u2014 '+BUFFS[key].name, t:60};
-  sfxUnlock();
-}
-// v3.0.2: buff/weapon-upgrade system disabled at the source, per direction.
-// The unlock/streak/drop system didn't communicate what a weapon was, what
-// it did, or why it was earned -- and a wave-based automatic upgrade tied
-// to a historical-period redesign is being considered instead. Rather than
-// rip out every hasBuff() call site (spear stat modifiers, HUD, rendering
-// variants all read it), this cuts off the single source: G.buffsAvail
-// never gets populated, so G.buffsActive can never be pushed to, so
-// hasBuff() returns false everywhere, so every buff branch throughout the
-// codebase falls through to its default (no-buff) behavior automatically.
-// Data structures (BUFFS, BUFF_PRIORITY, hasBuff, the activate* functions)
-// are left completely intact and working -- re-enabling is one line here,
-// not a rebuild, whenever the redesigned version is ready.
-function checkUnlocks(){
-  return;
-}
-function activateBestAvailableBuff(){
-  for (const key of BUFF_PRIORITY){
-    if (G.buffsAvail[key] && !hasBuff(key)){
-      if (G.buffsActive.length < 2){
-        G.buffsActive.push({key, timer:BUFFS[key].dur*30});
-        G.banner = {text: BUFFS[key].name+' READY', t:50};
-      } else {
-        let target = G.buffsActive[0];
-        for (const b of G.buffsActive) if (b.timer < target.timer) target = b;
-        target.timer = BUFFS[target.key].dur*30;
-        G.banner = {text: BUFFS[target.key].name+' RENEWED', t:50};
-      }
-      sfxBuffOn();
-      return;
-    }
-  }
-}
-function activateAllAvailableBuffs(){
-  for (const key of BUFF_PRIORITY){
-    if (G.buffsAvail[key] && !hasBuff(key) && G.buffsActive.length<2){
-      G.buffsActive.push({key, timer:BUFFS[key].dur*30});
-      sfxBuffOn();
-    }
-  }
-}
-function updateDrops(){
   const keep=[];
   for (const d of G.drops){
     d.t += 1;
-    if (d.t >= d.dur){ activateBestAvailableBuff(); continue; }
+    if (d.t >= d.dur) continue;
     keep.push(d);
   }
   G.drops = keep;
@@ -1000,12 +932,11 @@ function catchFish(f){
   }
   G.hitFlash = {x:f.fx, y:f.fy, t:10};
   sp.live=false;
-  if (hasBuff('searunline')){ sp.state='IDLE'; sp.charge=0; } else sp.state='RECOVERING';
+  sp.state='RECOVERING';
   sfxCatch(f.s.freq, f.s.hdur);
   if (k==='steelhead') sfxCatchExtra(f.s.freq);
   G.catchFlash = {name:f.s.name, t:42};
   if (!G.seen[k]){ G.seen[k]=true; G.newlySeen.push(k); }
-  checkUnlocks();
   G.streak += 1;
   handleStreak();
 }
@@ -1017,17 +948,6 @@ function updateSpearFlight(){
     sp.x += sp.vx/steps; sp.y += sp.vy/steps;
     const under = sp.y > WATER_Y;
     if (under) sp.uw += Math.sqrt(sp.vx*sp.vx+sp.vy*sp.vy)/steps;
-
-    // PITCH TORCH: the flame passing near a winding miner spoils his throw
-    // v3.0.1: vertical/horizontal range widened -- see the main kill-check
-    // below for why (same root cause, same fix).
-    if (hasBuff('pitchtorch')){
-      for (const m of G.miners){
-        if (m.state==='wind' && Math.abs(m.x-sp.x) < 24 && sp.y>WATER_Y-56 && sp.y<WATER_Y+6){
-          m.state='stand'; m.t = irnd(90,140); m.arm=0;
-        }
-      }
-    }
 
     if (!under && sp.x > BANK_X-8){
       for (const m of G.miners){
@@ -1042,30 +962,18 @@ function updateSpearFlight(){
         if (m.state!=='gone' && Math.abs(m.x-sp.x)<15 && sp.y>WATER_Y-56 && sp.y<WATER_Y+6){
           const wasVinegar = m.type==='vinegar';
           let goneT = (m.type==='jumper') ? 450 : 360;
-          if (hasBuff('pitchtorch')) goneT *= 2;
           m.state='gone'; m.t = goneT;
           G.minerHit = {x:m.x, y:WATER_Y-10, t:16};
           sfxMinerHit();
           G.minersSpeared += 1;
           G.minersSpearedWave += 1;
-          checkUnlocks();
           if (wasVinegar){
             // GDD §7.3: spearing the vinegar miner first is the big reward
             G.vinegarKilled = true;
             G.condition = Math.min(4, G.condition+1);
             G.lives += 1;
-            activateAllAvailableBuffs();
             G.banner = {text:'VINEGAR MINER DOWN', t:60};
             sfxExtend();
-          } else if (false && Math.random() < 0.45){
-            // v3.0.2: disabled alongside checkUnlocks() -- this drop exists
-            // purely to travel to the player and call activateBestAvailableBuff(),
-            // which is now permanently a no-op. Left the drop system itself
-            // (G.drops, drawDrops, updateDrops) intact and unused rather than
-            // deleted, since a wave-based auto-upgrade might still want a
-            // "you got something" visual moment; only this specific trigger
-            // is switched off.
-            G.drops.push({x:m.x, y:WATER_Y-10, tx:G.playerX, ty:G.obsY-4, t:0, dur:30});
           }
           endFlight(sp.x, sp.y, false, false); // doesn't break streak, doesn't advance it
           return;
@@ -1077,7 +985,7 @@ function updateSpearFlight(){
       for (const f of G.fish){
         if (!f.dead){
           const dx=f.fx-sp.x, dy=f.fy-sp.y;
-          const rad = hasBuff('leistertines') ? (15+f.s.len*0.6) : (9+f.s.len*0.45);
+          const rad = 9+f.s.len*0.45;
           if (Math.sqrt(dx*dx+dy*dy) < rad){ catchFish(f); return; }
         }
       }
@@ -1316,7 +1224,6 @@ function onLifeLost(kind){
   G.lives -= 1;
   G.livesUsed += 1;
   G.fallKind = kind;
-  G.buffsActive = []; // active buffs are cancelled on death (GDD §1.3/§4.4)
   G.streak = 0;
   G.mode = 'LIFELOST'; G.fallT = 0;
   if (kind==='vinegar') sfxVinegarHit();
@@ -1360,8 +1267,6 @@ function updatePlay(){
   updateMiners();
   updateRocks();
   updateDrops();
-
-  G.buffsActive = G.buffsActive.filter(b => { b.timer -= 1; return b.timer > 0; });
 
   G.condition = clamp(G.condition, 0, 4);
 
@@ -1857,16 +1762,9 @@ function drawFigure(ox, oy, braced, moving, aimAngle, spState, chargeK, recovK, 
 
 // spear: deliberately the most detailed sprite in the scene, drawn
 // oversized relative to the figure — ported directly from drawSpear().
-// v2 adds visual variants for up to two simultaneously active buffs
-// (GDD §4.5): buffA is the primary (drawn on the head), buffB a
-// secondary cosmetic touch (cord/flame) if a second buff is active.
-// v3.0.2: sprite-backed spear for the un-buffed case (the common case).
-// Every buff variant below (quickhaft/ironhead/obsidianedge/leistertines/
-// pitchtorch/searunline) changes the spear's actual silhouette in a way
-// that communicates which buff is active -- replicating all six from one
-// static extracted image is real work I didn't have budget for this pass,
-// so those keep the original procedural version, unchanged, exactly as
-// before. Only the plain spear (no buff) is upgraded.
+// The spear is drawn from the sprite (assets/sprites/spear.png); the procedural
+// version below is only the fallback if that image fails to load. The spear buffs
+// were removed.
 // Upgraded aim reticle -- a ring + four outward ticks, drawn twice (a dark
 // halo pass then the bright gold pass, same two-pass idiom as haloText())
 // so it reads against sky, water, and rock alike. Replaces a plain 6px
@@ -1889,14 +1787,12 @@ function drawReticle(x, y){
   ctx.beginPath(); ctx.arc(x, y, 1, 0, Math.PI * 2); ctx.fill();
 }
 
-const SPEAR_BUFF_KEYS = ['quickhaft','ironhead','obsidianedge','leistertines','pitchtorch','searunline'];
-function drawSpear(x1, y1, x2, y2, headSize, buffA, buffB){
-  const buffed = SPEAR_BUFF_KEYS.includes(buffA) || SPEAR_BUFF_KEYS.includes(buffB);
-  if (!buffed && SPR.ready && SPR.spearImg){
+function drawSpear(x1, y1, x2, y2, headSize){
+  if (SPR.ready && SPR.spearImg){
     drawSpearSprite(x1, y1, x2, y2);
     return;
   }
-  drawSpearProcedural(x1, y1, x2, y2, headSize, buffA, buffB);
+  drawSpearProcedural(x1, y1, x2, y2, headSize);
 }
 function drawSpearSprite(x1, y1, x2, y2){
   const dx=x2-x1, dy=y2-y1, len=Math.sqrt(dx*dx+dy*dy);
@@ -1911,15 +1807,13 @@ function drawSpearSprite(x1, y1, x2, y2){
                 -atlas.grip.x*scale, -atlas.grip.y*scale, atlas.frameW*scale, atlas.frameH*scale);
   ctx.restore();
 }
-function drawSpearProcedural(x1, y1, x2, y2, headSize, buffA, buffB){
+function drawSpearProcedural(x1, y1, x2, y2, headSize){
   const dx=x2-x1, dy=y2-y1, len=Math.sqrt(dx*dx+dy*dy);
   if (len<1) return;
   const ux=dx/len, uy=dy/len, px=-uy, py=ux;
   headSize = headSize || 5;
-  if (buffA==='quickhaft' || buffB==='quickhaft') headSize *= 0.85;
-  if (buffA==='ironhead'  || buffB==='ironhead')  headSize *= 1.15;
 
-  ctx.strokeStyle = '#5a4326'; ctx.lineWidth = (buffA==='quickhaft')?1.9:2.4;
+  ctx.strokeStyle = '#5a4326'; ctx.lineWidth = 2.4;
   ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2-ux*headSize*0.8, y2-uy*headSize*0.8); ctx.stroke();
   ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 0.8;
   ctx.beginPath(); ctx.moveTo(x1+px*0.6,y1+py*0.6); ctx.lineTo(x2-ux*headSize*0.8+px*0.6, y2-uy*headSize*0.8+py*0.6); ctx.stroke();
@@ -1932,28 +1826,8 @@ function drawSpearProcedural(x1, y1, x2, y2, headSize, buffA, buffB){
     ctx.beginPath(); ctx.moveTo(wx-px*2.2, wy-py*2.2); ctx.lineTo(wx+px*2.2, wy+py*2.2); ctx.stroke();
   }
 
-  if (buffA==='searunline' || buffB==='searunline'){
-    ctx.strokeStyle = 'rgba(90,67,38,0.7)'; ctx.lineWidth=0.8;
-    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x1-ux*10+px*3, y1-uy*10+py*3); ctx.stroke();
-  }
-  if (buffA==='pitchtorch' || buffB==='pitchtorch'){
-    const fx = x2-ux*headSize*1.3, fy = y2-uy*headSize*1.3;
-    ctx.fillStyle = '#3a2a1c'; ctx.fillRect(fx-1.5,fy-1.5,3,3);
-    const flick = Math.floor(G.t/3)%3;
-    ctx.fillStyle = flick===0?'#e8b23c':(flick===1?'#e86c2c':'#f0d060');
-    ctx.beginPath(); ctx.arc(fx, fy-2.5, 1.6, 0, Math.PI*2); ctx.fill();
-  }
-
-  if (buffA==='leistertines' || buffB==='leistertines'){
-    ctx.fillStyle = '#d8d2c4'; ctx.strokeStyle = PAL.ink; ctx.lineWidth=0.9;
-    for (const spread of [-0.5,0,0.5]){
-      const hx = x2-ux*headSize*0.2, hy = y2-uy*headSize*0.2;
-      const tx = x2+ux*headSize*0.4+px*headSize*spread, ty = y2+uy*headSize*0.4+py*headSize*spread;
-      ctx.beginPath(); ctx.moveTo(hx,hy); ctx.lineTo(tx,ty); ctx.stroke();
-    }
-  } else {
-    ctx.fillStyle = (buffA==='obsidianedge'||buffB==='obsidianedge') ? '#241a18' :
-                     (buffA==='ironhead'||buffB==='ironhead') ? '#3a3a3e' : '#d8d2c4';
+  {
+    ctx.fillStyle = '#d8d2c4';
     ctx.strokeStyle = PAL.ink; ctx.lineWidth=1;
     ctx.beginPath();
     ctx.moveTo(x2, y2);
@@ -1961,10 +1835,6 @@ function drawSpearProcedural(x1, y1, x2, y2, headSize, buffA, buffB){
     ctx.lineTo(x2-ux*headSize*0.55, y2-uy*headSize*0.55);
     ctx.lineTo(x2-ux*headSize-px*headSize*0.45, y2-uy*headSize-py*headSize*0.45);
     ctx.closePath(); ctx.fill(); ctx.stroke();
-    if (buffA==='obsidianedge'||buffB==='obsidianedge'){
-      ctx.strokeStyle = 'rgba(232,178,60,0.8)'; ctx.lineWidth=0.8;
-      ctx.beginPath(); ctx.moveTo(x2-ux*headSize*0.3, y2-uy*headSize*0.3); ctx.lineTo(x2,y2); ctx.stroke();
-    }
     ctx.beginPath();
     ctx.moveTo(x2-ux*headSize*0.35+px*headSize*0.4, y2-uy*headSize*0.35+py*headSize*0.4);
     ctx.lineTo(x2-ux*headSize*1.15+px*headSize*0.75, y2-uy*headSize*1.15+py*headSize*0.75);
@@ -2487,9 +2357,6 @@ function drawPlay(){
   const recovK = (sp.state==='RECOVERING' && sp.recovTotal) ? 1-(sp.recov/sp.recovTotal) : 0;
   drawFigure(ox, oy, braced, G.playerMoving, sp.angle, sp.state, sp.charge, recovK, sp.flightTicks||0);
 
-  const buffA = G.buffsActive[0] ? G.buffsActive[0].key : null;
-  const buffB = G.buffsActive[1] ? G.buffsActive[1].key : null;
-
   if (!sp.live && sp.state!=='RECOVERING'){
     const a = sp.angle*D2R;
     let ex = ox+(WATER_Y-oy)/Math.tan(a), ey = WATER_Y;
@@ -2500,7 +2367,7 @@ function drawPlay(){
   }
   if (sp.live){
     let n = Math.sqrt(sp.vx*sp.vx+sp.vy*sp.vy); if (n===0) n=1;
-    drawSpear(sp.x-sp.vx/n*24, sp.y-sp.vy/n*24, sp.x, sp.y, 6, buffA, buffB);
+    drawSpear(sp.x-sp.vx/n*24, sp.y-sp.vy/n*24, sp.x, sp.y, 6);
   } else if (sp.state==='COCKED'){
     // v3.0: sprite figure bakes in a held spear, so skip the procedural
     // pulled-back spear when the sprite is doing the drawing (see the
@@ -2511,7 +2378,7 @@ function drawPlay(){
     const usedSpriteCocked = !braced && (PLAYER_FIG_BUCKETS.length > 0 || (SPR.ready && SPR.figImg));
     if (!usedSpriteCocked){
       const back = clamp(sp.charge,0,1);
-      drawSpear(ox+2, oy-9, ox-8-back*8, oy-17-back*6, 5, buffA, buffB);
+      drawSpear(ox+2, oy-9, ox-8-back*8, oy-17-back*6, 5);
     }
   } else if (sp.state!=='RECOVERING'){
     // v3.0: the sprite figure (drawFigure's IDLE branch, same gating condition)
@@ -2520,10 +2387,10 @@ function drawPlay(){
     const usedSprite = !braced && sp.state==='IDLE' && (PLAYER_FIG_BUCKETS.length > 0 || (SPR.ready && SPR.figImg));
     if (!usedSprite){
       const a = sp.angle*D2R;
-      drawSpear(ox+2, oy-8, ox+2+Math.cos(a)*22, oy-8+Math.sin(a)*22, 5, buffA, buffB);
+      drawSpear(ox+2, oy-8, ox+2+Math.cos(a)*22, oy-8+Math.sin(a)*22, 5);
     }
   }
-  if (G.stuck) drawSpear(G.stuck.x+4, G.stuck.y-20, G.stuck.x, G.stuck.y, 5, buffA, buffB);
+  if (G.stuck) drawSpear(G.stuck.x+4, G.stuck.y-20, G.stuck.x, G.stuck.y, 5);
 
   for (const f of G.fish){
     const dir = f.vx>=0 ? 1 : -1;
