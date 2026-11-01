@@ -1105,6 +1105,8 @@ function takeFish(m){
   const f = live[0];
   f.dead = true;
   G.taken.push({ x:f.fx, y:f.fy, tx:m.x, s:f.s, t:0 });
+  (m.stolen = m.stolen || []).push(f.s.key); // each stolen fish joins his string
+  if (m.stolen.length > 7) m.stolen.shift();
 }
 function updateMiners(){
   G.minerTimer -= 1;
@@ -1118,7 +1120,7 @@ function updateMiners(){
       // v7.1: was the fixed x=404 -- same G.pierCx-tracking fix as the
       // initial spawn in spawnMiner()/spawnVinegarMiner(), for a miner
       // re-entering after retreating offscreen.
-      m.t -= 1; if (m.t<=0){ m.state='walk'; m.x=G.pierCx+34; }
+      m.t -= 1; if (m.t<=0){ m.state='walk'; m.x=G.pierCx+34; m.stolen=[]; }
     } else if (m.state==='walk'){
       m.x -= (m.type==='vinegar') ? 0.6 : 0.9; // vinegar miner approaches slower (GDD §6.3)
       if (m.x <= m.tx){
@@ -1494,7 +1496,9 @@ function drawMinerPier(){
     // anchorX/anchorY re-measured the same empirical way as the old
     // anchorY=68 fix: the front post's plank surface, which needs to land
     // at WATER_Y to match drawMinerSkin()/drawMinerSprite()'s feet anchor.
-    const anchorX = 100, anchorY = 64;
+    // Re-measured for the redesigned dock (hoist post at its left end): the deck top
+    // is row 108, and the miners stand 150px in so they clear the post.
+    const anchorX = 150, anchorY = 108;
     const scale = 0.21;
     // G.pierCx/pierRot: a small per-wave position+tilt roll (see
     // startWave()), same idea as the tower's. Rotated around the plank's
@@ -2064,9 +2068,22 @@ function drawMiner(m){
         } else {
           ctx.beginPath(); ctx.moveTo(px,py); ctx.lineTo(px-5,py+3); ctx.stroke();
         }
-      } else {
-        ctx.beginPath(); ctx.moveTo(px,py); ctx.lineTo(px-13,py+22); ctx.stroke();
-        ctx.fillStyle = '#7a8a6a'; ctx.fillRect(px-14.5,py+20.5,3,3);
+      } else if (m.stolen && m.stolen.length){
+        // The rival angler already carries three salmon on his cord in the
+        // sprite; every fish he steals hangs from the same hand next to them.
+        const hx = x-15, hy = WATER_Y-30;
+        m.stolen.forEach((key, i) => {
+          const sway = Math.sin(G.t*0.12 + i*1.7) * 0.12;
+          ctx.save();
+          ctx.translate(hx - 6 - i*3.4, hy + (i%2)*2);
+          ctx.rotate(sway);
+          ctx.strokeStyle = PAL.ink; ctx.lineWidth = 0.6;
+          ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0,6); ctx.stroke();
+          ctx.translate(0, 6 + 7);
+          ctx.rotate(-Math.PI/2);
+          drawFishShape(0, 0, key, 1, 0.6);
+          ctx.restore();
+        });
       }
     }
     return;
