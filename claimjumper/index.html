@@ -67,6 +67,10 @@ const WATER_Y = 110, BOT_Y = 210, OBS_X = 70, POOL_L = 114, BANK_X = 350;
 // framing bug where the tallest waves' platform sat close enough to the
 // top of the canvas that the player figure rendered partly off-screen --
 // TOWER_H=55 is wave 1's original value, the most-tested case.
+// v7.4: the wave-intro "PLATFORM: X FEET" line itself is gone now too
+// (see drawWaveIntro()) -- once this became one fixed constant it was a
+// stat that never varied and never meant anything to begin with. TOWER_H
+// stays; it's still the real platform height used everywhere else.
 const TOWER_H = 55;
 
 // ---- v3.0: Firefly sprite assets (fish + figure aim-bucket poses) ----
@@ -2626,16 +2630,24 @@ function drawWaveIntro(){
   else drawSky();
   boldCText('WAVE '+G.wave, 70, 26);
   ctext(G.w.name, 94, {font:'14px Georgia', color:'#4a3018'});
-  ctext('PLATFORM: '+Math.floor(TOWER_H/5)+' FEET', 114, {font:'12px Georgia', color:'#6b5030'});
+  // v7.4: dropped "PLATFORM: X FEET" -- TOWER_H has been one fixed
+  // constant across every wave since v7.2 (see its own comment), so this
+  // was a stat that never actually varied and never meant anything.
+  // Lines below shifted up to fill the gap instead of leaving it empty.
   if (G.wave===G.vinegarWave && !G.vinegarSpawned){
-    ctext('SOME OF THEM CAME UP FROM VINEGAR HILL.', 130, {font:'11px Georgia', color:'#6b3018'});
+    ctext('SOME OF THEM CAME UP FROM VINEGAR HILL.', 110, {font:'11px Georgia', color:'#6b3018'});
   }
   if (G.wave===1){
-    ctext('ARROWS/A D MOVE \u00b7 MOUSE AIM \u00b7 SPACE OR CLICK TO THROW', 146, {font:'10px Georgia'});
-    ctext('B BRACES A ROCK \u00b7 WATCH FOR THE GLASS GLINT', 162, {font:'11px Georgia'});
-    if (G.t>40) ctext('PRESS ENTER', 192, {font:'bold 13px Georgia'});
+    // v7.4: was two lines of control prose; trimmed filler words (OR, TO,
+    // A ROCK) rather than dropping any actual control, and split the
+    // gameplay tip (glass glint) onto its own short line instead of
+    // tacking it onto the brace callout.
+    ctext('ARROWS/AD MOVE \u00b7 MOUSE AIM \u00b7 SPACE/CLICK THROW \u00b7 B BRACE', 136, {font:'10px Georgia'});
+    ctext('WATCH FOR THE GLASS GLINT', 152, {font:'11px Georgia'});
+    if (G.t>40) ctext('PRESS ENTER', 174, {font:'bold 13px Georgia'});
   } else {
-    if (G.t>40) ctext('PRESS ENTER', 150, {font:'bold 13px Georgia'});
+    const pressY = (G.wave===G.vinegarWave && !G.vinegarSpawned) ? 136 : 120;
+    if (G.t>40) ctext('PRESS ENTER', pressY, {font:'bold 13px Georgia'});
   }
 }
 
