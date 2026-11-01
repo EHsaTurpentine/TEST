@@ -910,6 +910,7 @@ function handleStreak(){
   else if (G.streak>8 && (G.streak-8)%4===0){ G.condition=Math.min(4,G.condition+1); G.banner={text:'STREAK '+G.streak, t:50}; sfxStreak(); }
 }
 
+function updateDrops(){
   const keep=[];
   for (const d of G.drops){
     d.t += 1;
