@@ -1,0 +1,5 @@
+# Working files: raw generations, conformed output, previews. Only slots.json,
+# the tools and the README are committed; approved art lands in claimjumper/.
+staging/
+out/
+__pycache__/
