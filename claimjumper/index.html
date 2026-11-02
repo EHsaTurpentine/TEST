@@ -727,7 +727,7 @@ function startWave(){
   // spawning, and collision are unaffected -- only where the art is drawn.
   G.towerCx = 65 + rnd(-8, 8);
   G.towerRot = rnd(-6, 6) * D2R;
-  G.pierCx = 370 + rnd(-15, 15);
+  G.pierCx = 352 + rnd(-5, 5); // enemies' standing spot on the right bank (there is no dock any more)
   G.pierRot = rnd(-8, 8) * D2R;
   // v7.1: was G.wave===6 -- dead since the wave count was cut from 6 to 5
   // (see WAVES above), silently disabling this GDD §7.1 stretch feature.
@@ -1029,7 +1029,7 @@ function spawnMiner(){
   const tx = G.pierCx + ((kind==='rock') ? rnd(-14,22) : rnd(-18,2));
   const pool = rockSkinPool();
   const skin = (kind==='rock') ? pool[irnd(0,pool.length-1)] : null;
-  G.miners.push({ type:kind, x:G.pierCx+34, tx, state:'walk', t:0, arm:0, skin });
+  G.miners.push({ type:kind, x:G.pierCx+52, tx, state:'walk', t:0, arm:0, skin });
 }
 // --- v2: the vinegar miner (GDD §7) ---
 function maybeSpawnVinegar(){
@@ -1047,7 +1047,7 @@ function spawnVinegarMiner(){
   if (G.miners.length >= 4) return;
   // v7 §1.1: Miner/Soldier is the sole skin on the vinegar-spawn behavior.
   // v7.1: tx/x relative to G.pierCx, same reasoning as spawnMiner() above.
-  G.miners.push({ type:'vinegar', x:G.pierCx+34, tx: G.pierCx+rnd(-18,2), state:'walk', t:0, arm:0, skin:'soldier' });
+  G.miners.push({ type:'vinegar', x:G.pierCx+52, tx: G.pierCx+rnd(-18,2), state:'walk', t:0, arm:0, skin:'soldier' });
   G.banner = {text:'SOMETHING IN HIS HAND CATCHES THE LIGHT', t:45};
   sfxVinegarSpawn();
 }
@@ -1120,7 +1120,7 @@ function updateMiners(){
       // v7.1: was the fixed x=404 -- same G.pierCx-tracking fix as the
       // initial spawn in spawnMiner()/spawnVinegarMiner(), for a miner
       // re-entering after retreating offscreen.
-      m.t -= 1; if (m.t<=0){ m.state='walk'; m.x=G.pierCx+34; m.stolen=[]; }
+      m.t -= 1; if (m.t<=0){ m.state='walk'; m.x=G.pierCx+52; m.stolen=[]; }
     } else if (m.state==='walk'){
       m.x -= (m.type==='vinegar') ? 0.6 : 0.9; // vinegar miner approaches slower (GDD §6.3)
       if (m.x <= m.tx){
@@ -2367,7 +2367,6 @@ function drawPlay(){
   // v5: static pier -- always drawn, independent of whether a miner is
   // currently present (see drawMinerPier for why this is procedural
   // rather than a sprite crop).
-  drawMinerPier();
 
   const oy = G.obsY;
   drawPlatform(oy);
