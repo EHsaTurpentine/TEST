@@ -655,9 +655,11 @@ const MIN_POWER = 0.10;   // below this: a fizzled, too-weak throw
 function chargeTime(){ return CHARGE_TIME; }
 
 function powerBand(p){
-  if (p < 0.3) return [45, 90, 20];
-  if (p < 0.7) return [80, 150, 32];
-  return [105, 220, 45];
+  // [depth, range, recovery ticks]. Recovery is short on purpose: the game is
+  // arcade-silly, so a miss should let you re-arm almost immediately.
+  if (p < 0.3) return [45, 90, 7];
+  if (p < 0.7) return [80, 150, 10];
+  return [105, 220, 14];
 }
 
 function newSpear(){
@@ -815,7 +817,7 @@ function updateFish(f){
 // second, and a rock thrown at you during that whole window was previously
 // undodgeable no matter how it was aimed. Shuffling your feet while winding
 // up a throw is a normal thing to be able to do; RECOVERING (the brief
-// post-throw stagger, 20-45 ticks depending on power) and bracing stay
+// post-throw stagger, 7-14 ticks depending on power) and bracing stay
 // locked -- those are shorter and are meant to carry real risk.
 function updateMovement(){
   const sp = G.sp;
@@ -881,7 +883,7 @@ function fire(power){
   sp.charge = 0;
   if (power < MIN_POWER){
     G.stuck = { x:G.playerX+14, y:WATER_Y+8, t:24 };
-    sp.state='RECOVERING'; sp.recov=20; sp.recovTotal=20;
+    sp.state='RECOVERING'; sp.recov=7; sp.recovTotal=7;
     sfxFizzle();
     G.streak = 0; // fizzles count as a miss (GDD §5.2)
     return;
@@ -891,7 +893,7 @@ function fire(power){
   let [depth, range, recov] = powerBand(power);
   sp.power = power;
   sp.x = G.playerX+G.shoveX+4; sp.y = G.obsY-2;
-  sp.vx = Math.cos(a*D2R)*9; sp.vy = Math.sin(a*D2R)*9;
+  sp.vx = Math.cos(a*D2R)*14; sp.vy = Math.sin(a*D2R)*14; // faster flight (was 9); the spear still moves in 3 sub-steps per tick, so nothing is skipped
   sp.uw = 0; sp.splashed=false; sp.uwRange=range; sp.maxDepth=depth;
   sp.live=true; sp.recov=recov; sp.recovTotal=recov; sp.state='FLIGHT'; sp.flightTicks=0;
 }
